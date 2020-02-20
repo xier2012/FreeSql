@@ -4,10 +4,6 @@ using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
-using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text;
 
 namespace FreeSql.MySql
 {
@@ -18,21 +14,34 @@ namespace FreeSql.MySql
         {
         }
 
-        public override DbParameter AppendParamter(List<DbParameter> _params, string parameterName, Type type, object value)
+        public override DbParameter AppendParamter(List<DbParameter> _params, string parameterName, ColumnInfo col, Type type, object value)
         {
             if (string.IsNullOrEmpty(parameterName)) parameterName = $"p_{_params?.Count}";
             var ret = new MySqlParameter { ParameterName = QuoteParamterName(parameterName), Value = value };
-            var tp = _orm.CodeFirst.GetDbInfo(type)?.type;
-            if (tp != null)
+            var dbtype = (MySqlDbType)_orm.CodeFirst.GetDbInfo(type)?.type;
+            if (col != null)
             {
-                if ((MySqlDbType)tp.Value == MySqlDbType.Geometry)
+                var dbtype2 = (MySqlDbType)_orm.DbFirst.GetDbType(new DatabaseModel.DbColumnInfo { DbTypeText = col.DbTypeText, DbTypeTextFull = col.Attribute.DbType, MaxLength = col.DbSize });
+                switch (dbtype2)
                 {
-                    ret.MySqlDbType = MySqlDbType.Text;
-                    if (value != null) ret.Value = (value as MygisGeometry).AsText();
+                    case MySqlDbType.Binary:
+                    case MySqlDbType.VarBinary:
+                        break;
+                    default:
+                        dbtype = dbtype2;
+                        if (col.DbSize != 0) ret.Size = col.DbSize;
+                        if (col.DbPrecision != 0) ret.Precision = col.DbPrecision;
+                        if (col.DbScale != 0) ret.Scale = col.DbScale;
+                        break;
                 }
-                else
-                    ret.MySqlDbType = (MySqlDbType)tp.Value;
             }
+            if (dbtype == MySqlDbType.Geometry)
+            {
+                ret.MySqlDbType = MySqlDbType.Text;
+                if (value != null) ret.Value = (value as MygisGeometry).AsText();
+            }
+            else
+                ret.MySqlDbType = dbtype;
             _params?.Add(ret);
             return ret;
         }
@@ -56,12 +65,18 @@ namespace FreeSql.MySql
             });
 
         public override string FormatSql(string sql, params object[] args) => sql?.FormatMySql(args);
-        public override string QuoteSqlName(string name)
+        public override string QuoteSqlName(params string[] name)
         {
-            var nametrim = name.Trim();
-            if (nametrim.StartsWith("(") && nametrim.EndsWith(")"))
-                return nametrim; //原生SQL
-            return $"`{nametrim.Trim('`').Replace(".", "`.`")}`";
+            if (name.Length == 1)
+            {
+                var nametrim = name[0].Trim();
+                if (nametrim.StartsWith("(") && nametrim.EndsWith(")"))
+                    return nametrim; //原生SQL
+                if (nametrim.StartsWith("`") && nametrim.EndsWith("`"))
+                    return nametrim;
+                return $"`{nametrim.Replace(".", "`.`")}`";
+            }
+            return $"`{string.Join("`.`", name)}`";
         }
         public override string TrimQuoteSqlName(string name)
         {
@@ -70,11 +85,14 @@ namespace FreeSql.MySql
                 return nametrim; //原生SQL
             return $"{nametrim.Trim('`').Replace("`.`", ".").Replace(".`", ".")}";
         }
+        public override string[] SplitTableName(string name) => GetSplitTableNames(name, '`', '`', 2);
         public override string QuoteParamterName(string name) => $"?{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
         public override string IsNull(string sql, object value) => $"ifnull({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types) => $"concat({string.Join(", ", objs)})";
         public override string Mod(string left, string right, Type leftType, Type rightType) => $"{left} % {right}";
         public override string Div(string left, string right, Type leftType, Type rightType) => $"{left} div {right}";
+        public override string Now => "now()";
+        public override string NowUtc => "utc_timestamp()";
 
         public override string QuoteWriteParamter(Type type, string paramterName)
         {
@@ -89,9 +107,9 @@ namespace FreeSql.MySql
             }
             return paramterName;
         }
-        public override string QuoteReadColumn(Type type, string columnName)
+        public override string QuoteReadColumn(Type type, Type mapType, string columnName)
         {
-            switch (type.FullName)
+            switch (mapType.FullName)
             {
                 case "MygisPoint":
                 case "MygisLineString":
@@ -106,18 +124,8 @@ namespace FreeSql.MySql
         public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
         {
             if (value == null) return "NULL";
-            if (type == typeof(byte[]))
-            {
-                var bytes = value as byte[];
-                var sb = new StringBuilder().Append("0x");
-                foreach (var vc in bytes)
-                {
-                    if (vc < 10) sb.Append("0");
-                    sb.Append(vc.ToString("X"));
-                }
-                return sb.ToString(); //val = Encoding.UTF8.GetString(val as byte[]);
-            }
-            else if (type == typeof(TimeSpan) || type == typeof(TimeSpan?))
+            if (type == typeof(byte[])) return $"0x{CommonUtils.BytesSqlRaw(value as byte[])}";
+            if (type == typeof(TimeSpan) || type == typeof(TimeSpan?))
             {
                 var ts = (TimeSpan)value;
                 value = $"{Math.Floor(ts.TotalHours)}:{ts.Minutes}:{ts.Seconds}";

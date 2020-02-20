@@ -10,6 +10,33 @@ namespace FreeSql.Tests.MySqlConnector
 {
     public class MySqlCodeFirstTest
     {
+        [Fact]
+        public void 表名中有点()
+        {
+            var item = new tbdot01 { name = "insert" };
+            g.mysql.Insert(item).ExecuteAffrows();
+
+            var find = g.mysql.Select<tbdot01>().Where(a => a.id == item.id).First();
+            Assert.NotNull(find);
+            Assert.Equal(item.id, find.id);
+            Assert.Equal("insert", find.name);
+
+            Assert.Equal(1, g.mysql.Update<tbdot01>().Set(a => a.name == "update").Where(a => a.id == item.id).ExecuteAffrows());
+            find = g.mysql.Select<tbdot01>().Where(a => a.id == item.id).First();
+            Assert.NotNull(find);
+            Assert.Equal(item.id, find.id);
+            Assert.Equal("update", find.name);
+
+            Assert.Equal(1, g.mysql.Delete<tbdot01>().Where(a => a.id == item.id).ExecuteAffrows());
+            find = g.mysql.Select<tbdot01>().Where(a => a.id == item.id).First();
+            Assert.Null(find);
+        }
+        [Table(Name = "`sys.tbdot01`")]
+        class tbdot01
+        {
+            public Guid id { get; set; }
+            public string name { get; set; }
+        }
 
         [Fact]
         public void 中文表_字段()
@@ -28,6 +55,8 @@ namespace FreeSql.Tests.MySqlConnector
             Assert.NotNull(item2);
             Assert.Equal(item.编号, item2.编号);
             Assert.Equal(item.标题, item2.标题);
+
+            g.mysql.Update<测试中文表2>().SetSource(item2).ExecuteAffrows();
         }
         class 测试中文表2
         {
@@ -36,7 +65,11 @@ namespace FreeSql.Tests.MySqlConnector
 
             public string 标题 { get; set; }
 
+            [Column(ServerTime = DateTimeKind.Local, CanUpdate = false)]
             public DateTime 创建时间 { get; set; }
+
+            [Column(ServerTime = DateTimeKind.Local)]
+            public DateTime 更新时间 { get; set; }
         }
 
         [Fact]
@@ -458,7 +491,10 @@ namespace FreeSql.Tests.MySqlConnector
             public float testFieldFloat { get; set; }
             public decimal testFieldDecimal { get; set; }
             public TimeSpan testFieldTimeSpan { get; set; }
+
+            [Column(ServerTime = DateTimeKind.Local)]
             public DateTime testFieldDateTime { get; set; }
+
             public byte[] testFieldBytes { get; set; }
             public string testFieldString { get; set; }
             public Guid testFieldGuid { get; set; }
@@ -476,7 +512,10 @@ namespace FreeSql.Tests.MySqlConnector
             public float? testFieldFloatNullable { get; set; }
             public decimal? testFieldDecimalNullable { get; set; }
             public TimeSpan? testFieldTimeSpanNullable { get; set; }
+
+            [Column(ServerTime = DateTimeKind.Local)]
             public DateTime? testFieldDateTimeNullable { get; set; }
+
             public Guid? testFieldGuidNullable { get; set; }
 
             public MygisPoint testFieldPoint { get; set; }

@@ -103,43 +103,57 @@ ELSE
     , @level2type = 'COLUMN', @level2name = N'{2}'
 ", schema.Replace("'", "''"), table.Replace("'", "''"), column.Replace("'", "''"), comment?.Replace("'", "''") ?? "");
         }
-        public override string GetComparisonDDLStatements(params Type[] entityTypes)
+        protected override string GetComparisonDDLStatements(params (Type entityType, string tableName)[] objects)
         {
             var conn = _orm.Ado.MasterPool.Get(TimeSpan.FromSeconds(5));
-            var database = conn.Value.Database;
-            Func<string, string, object> ExecuteScalar = (db, sql) =>
-            {
-                if (string.Compare(database, db) != 0) conn.Value.ChangeDatabase(db);
-                try
-                {
-                    using (var cmd = conn.Value.CreateCommand())
-                    {
-                        cmd.CommandText = sql;
-                        cmd.CommandType = CommandType.Text;
-                        return cmd.ExecuteScalar();
-                    }
-                }
-                finally
-                {
-                    if (string.Compare(database, db) != 0) conn.Value.ChangeDatabase(database);
-                }
-            };
-            var sb = new StringBuilder();
+            string database = null;
             try
             {
-                foreach (var entityType in entityTypes)
+                database = conn.Value.Database;
+                Func<string, string, object> ExecuteScalar = (db, sql) =>
+                {
+                    if (string.Compare(database, db) != 0) conn.Value.ChangeDatabase(db);
+                    try
+                    {
+                        using (var cmd = conn.Value.CreateCommand())
+                        {
+                            cmd.CommandText = sql;
+                            cmd.CommandType = CommandType.Text;
+                            return cmd.ExecuteScalar();
+                        }
+                    }
+                    finally
+                    {
+                        if (string.Compare(database, db) != 0) conn.Value.ChangeDatabase(database);
+                    }
+                };
+                var sb = new StringBuilder();
+
+                foreach (var obj in objects)
                 {
                     if (sb.Length > 0) sb.Append("\r\n");
-                    var tb = _commonUtils.GetTableByEntity(entityType);
-                    if (tb == null) throw new Exception($"类型 {entityType.FullName} 不可迁移");
-                    if (tb.Columns.Any() == false) throw new Exception($"类型 {entityType.FullName} 不可迁移，可迁移属性0个");
-                    var tbname = tb.DbName.Split(new[] { '.' }, 3);
+                    var tb = _commonUtils.GetTableByEntity(obj.entityType);
+                    if (tb == null) throw new Exception($"类型 {obj.entityType.FullName} 不可迁移");
+                    if (tb.Columns.Any() == false) throw new Exception($"类型 {obj.entityType.FullName} 不可迁移，可迁移属性0个");
+                    var tbname = _commonUtils.SplitTableName(tb.DbName);
                     if (tbname?.Length == 1) tbname = new[] { database, "dbo", tbname[0] };
                     if (tbname?.Length == 2) tbname = new[] { database, tbname[0], tbname[1] };
 
-                    var tboldname = tb.DbOldName?.Split(new[] { '.' }, 3); //旧表名
+                    var tboldname = _commonUtils.SplitTableName(tb.DbOldName); //旧表名
                     if (tboldname?.Length == 1) tboldname = new[] { database, "dbo", tboldname[0] };
                     if (tboldname?.Length == 2) tboldname = new[] { database, tboldname[0], tboldname[1] };
+                    if (string.IsNullOrEmpty(obj.tableName) == false)
+                    {
+                        var tbtmpname = _commonUtils.SplitTableName(obj.tableName);
+                        if (tbtmpname?.Length == 1) tbtmpname = new[] { database, "dbo", tbtmpname[0] };
+                        if (tbtmpname?.Length == 2) tbtmpname = new[] { database, tbtmpname[0], tbtmpname[1] };
+                        if (tbname[0] != tbtmpname[0] || tbname[1] != tbtmpname[1] || tbname[2] != tbtmpname[2])
+                        {
+                            tbname = tbtmpname;
+                            tboldname = null;
+                        }
+                    }
+                    //codefirst 不支持表名、模式名、数据库名中带 .
 
                     if (string.Compare(tbname[0], database, true) != 0 && ExecuteScalar(database, $" select 1 from sys.databases where name='{tbname[0]}'") == null) //创建数据库
                         ExecuteScalar(database, $"if not exists(select 1 from sys.databases where name='{tbname[0]}')\r\n\tcreate database [{tbname[0]}];");
@@ -166,8 +180,7 @@ ELSE
                             var pkidx = 0;
                             foreach (var tbcol in tb.ColumnsByPosition)
                             {
-                                sb.Append(" \r\n  ").Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(" ");
-                                sb.Append(tbcol.Attribute.DbType);
+                                sb.Append(" \r\n  ").Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(" ").Append(tbcol.Attribute.DbType);
                                 if (tbcol.Attribute.IsIdentity == true && tbcol.Attribute.DbType.IndexOf("identity", StringComparison.CurrentCultureIgnoreCase) == -1) sb.Append(" identity(1,1)");
                                 if (tbcol.Attribute.IsPrimary == true)
                                 {
@@ -232,10 +245,9 @@ a.name 'Column'
  else '' end as 'SqlType'
 ,case when a.is_nullable = 1 then '1' else '0' end 'IsNullable'
 ,case when a.is_identity = 1 then '1' else '0' end 'IsIdentity'
-,c.value
+,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = a.column_id AND name = 'MS_Description') 'Comment'
 from sys.columns a
 inner join sys.types b on b.user_type_id = a.user_type_id
-left join sys.extended_properties AS c ON c.major_id = a.object_id AND c.minor_id = a.column_id
 left join sys.tables d on d.object_id = a.object_id
 left join sys.schemas e on e.schema_id = d.schema_id
 where a.object_id in (object_id(N'[{1}].[{2}]'));
@@ -276,11 +288,7 @@ use " + database, tboldname ?? tbname);
                             //添加列
                             sbalter.Append("ALTER TABLE ").Append(_commonUtils.QuoteSqlName($"{tbname[0]}.{tbname[1]}.{tbname[2]}")).Append(" ADD ").Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(" ").Append(tbcol.Attribute.DbType);
                             if (tbcol.Attribute.IsIdentity == true && tbcol.Attribute.DbType.IndexOf("identity", StringComparison.CurrentCultureIgnoreCase) == -1) sbalter.Append(" identity(1,1)");
-                            if (tbcol.Attribute.IsNullable == false && tbcol.Attribute.IsIdentity == false)
-                            {
-                                var addcoldbdefault = tbcol.Attribute.DbDefautValue;
-                                if (addcoldbdefault != null) sbalter.Append(_commonUtils.FormatSql(" default({0})", addcoldbdefault));
-                            }
+                            if (tbcol.Attribute.IsNullable == false && tbcol.DbDefaultValue != "NULL" && tbcol.Attribute.IsIdentity == false) sbalter.Append(" default(").Append(GetTransferDbDefaultValue(tbcol)).Append(")");
                             sbalter.Append(";\r\n");
                             if (string.IsNullOrEmpty(tbcol.Comment) == false) AddOrUpdateMS_Description(sbalter, tbname[1], tbname[2], tbcol.Attribute.Name, tbcol.Comment);
                         }
@@ -342,8 +350,7 @@ use " + database, tboldname ?? tbname);
                     var pkidx2 = 0;
                     foreach (var tbcol in tb.ColumnsByPosition)
                     {
-                        sb.Append(" \r\n  ").Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(" ");
-                        sb.Append(tbcol.Attribute.DbType);
+                        sb.Append(" \r\n  ").Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(" ").Append(tbcol.Attribute.DbType);
                         if (tbcol.Attribute.IsIdentity == true && tbcol.Attribute.DbType.IndexOf("identity", StringComparison.CurrentCultureIgnoreCase) == -1) sb.Append(" identity(1,1)");
                         if (tbcol.Attribute.IsPrimary == true)
                         {
@@ -366,7 +373,8 @@ use " + database, tboldname ?? tbname);
                         if (string.IsNullOrEmpty(tbcol.Comment) == false)
                             AddOrUpdateMS_Description(sb, tbname[1], $"FreeSqlTmp_{tbname[2]}", tbcol.Attribute.Name, tbcol.Comment);
                     }
-                    sb.Append("ALTER TABLE ").Append(tmptablename).Append(" SET (LOCK_ESCALATION = TABLE);\r\n");
+                    if ((_commonUtils as OdbcSqlServerUtils).ServerVersion > 9) //SqlServer 2008+
+                        sb.Append("ALTER TABLE ").Append(tmptablename).Append(" SET (LOCK_ESCALATION = TABLE);\r\n");
                     if (idents) sb.Append("SET IDENTITY_INSERT ").Append(tmptablename).Append(" ON;\r\n");
                     sb.Append("IF EXISTS(SELECT 1 FROM ").Append(tablename).Append(")\r\n");
                     sb.Append("\tEXEC('INSERT INTO ").Append(tmptablename).Append(" (");
@@ -383,10 +391,11 @@ use " + database, tboldname ?? tbname);
                             if (tbcol.Attribute.DbType.StartsWith(tbstructcol.sqlType, StringComparison.CurrentCultureIgnoreCase) == false)
                                 insertvalue = $"cast({insertvalue} as {tbcol.Attribute.DbType.Split(' ').First()})";
                             if (tbcol.Attribute.IsNullable != tbstructcol.is_nullable)
-                                insertvalue = $"isnull({insertvalue},{_commonUtils.FormatSql("{0}", GetTransferDbDefaultValue(tbcol))})";
+                                insertvalue = $"isnull({insertvalue},{GetTransferDbDefaultValue(tbcol)})";
                         }
                         else if (tbcol.Attribute.IsNullable == false)
-                            insertvalue = _commonUtils.FormatSql("{0}", GetTransferDbDefaultValue(tbcol));
+                            if (tbcol.DbDefaultValue != "NULL" && tbcol.Attribute.IsIdentity == false)
+                                insertvalue = GetTransferDbDefaultValue(tbcol);
                         sb.Append(insertvalue.Replace("'", "''")).Append(", ");
                     }
                     sb.Remove(sb.Length - 2, 2).Append(" FROM ").Append(tablename).Append(" WITH (HOLDLOCK TABLOCKX)');\r\n");
@@ -415,7 +424,8 @@ use " + database, tboldname ?? tbname);
             {
                 try
                 {
-                    conn.Value.ChangeDatabase(database);
+                    if (string.IsNullOrEmpty(database) == false)
+                        conn.Value.ChangeDatabase(database);
                     _orm.Ado.MasterPool.Return(conn);
                 }
                 catch
@@ -424,16 +434,15 @@ use " + database, tboldname ?? tbname);
                 }
             }
         }
-        object GetTransferDbDefaultValue(ColumnInfo col)
+        string GetTransferDbDefaultValue(ColumnInfo col)
         {
-            var ddv = col.Attribute.DbDefautValue;
-            if (ddv == null) return ddv;
-            if (ddv is DateTime || ddv is DateTime?)
+            var ddv = col.DbDefaultValue;
+            if (string.IsNullOrEmpty(ddv) || ddv == "NULL") return ddv;
+            if (col.Attribute.MapType.NullableTypeOrThis() == typeof(DateTime) && DateTime.TryParse(ddv, out var trydt))
             {
-                var dt = (DateTime)ddv;
-                if (col.Attribute.DbType.Contains("SMALLDATETIME") && dt < new DateTime(1900, 1, 1)) ddv = new DateTime(1900, 1, 1);
-                else if (col.Attribute.DbType.Contains("DATETIME") && dt < new DateTime(1753, 1, 1)) ddv = new DateTime(1753, 1, 1);
-                else if (col.Attribute.DbType.Contains("DATE") && dt < new DateTime(0001, 1, 1)) ddv = new DateTime(0001, 1, 1);
+                if (col.Attribute.DbType.Contains("SMALLDATETIME") && trydt < new DateTime(1900, 1, 1)) ddv = _commonUtils.FormatSql("{0}", new DateTime(1900, 1, 1));
+                else if (col.Attribute.DbType.Contains("DATETIME") && trydt < new DateTime(1753, 1, 1)) ddv = _commonUtils.FormatSql("{0}", new DateTime(1753, 1, 1));
+                else if (col.Attribute.DbType.Contains("DATE") && trydt < new DateTime(0001, 1, 1)) ddv = _commonUtils.FormatSql("{0}", new DateTime(0001, 1, 1));
             }
             return ddv;
         }

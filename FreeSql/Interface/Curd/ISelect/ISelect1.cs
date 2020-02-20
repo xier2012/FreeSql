@@ -23,10 +23,10 @@ namespace FreeSql
         Task<TDto> FirstAsync<TDto>();
         
         Task<TReturn> ToAggregateAsync<TReturn>(Expression<Func<ISelectGroupingAggregate<T1>, TReturn>> select);
-        Task<TMember> SumAsync<TMember>(Expression<Func<T1, TMember>> column);
+        Task<decimal> SumAsync<TMember>(Expression<Func<T1, TMember>> column);
         Task<TMember> MinAsync<TMember>(Expression<Func<T1, TMember>> column);
         Task<TMember> MaxAsync<TMember>(Expression<Func<T1, TMember>> column);
-        Task<TMember> AvgAsync<TMember>(Expression<Func<T1, TMember>> column);
+        Task<double> AvgAsync<TMember>(Expression<Func<T1, TMember>> column);
 #endif
 
         /// <summary>
@@ -89,8 +89,9 @@ namespace FreeSql
         /// </summary>
         /// <typeparam name="TReturn">返回类型</typeparam>
         /// <param name="select">选择列</param>
+        /// <param name="fieldAlias">字段别名</param>
         /// <returns></returns>
-        string ToSql<TReturn>(Expression<Func<T1, TReturn>> select);
+        string ToSql<TReturn>(Expression<Func<T1, TReturn>> select, FieldAliasOptions fieldAlias = FieldAliasOptions.AsIndex);
 
         /// <summary>
         /// 执行SQL查询，返回指定字段的聚合结果
@@ -106,7 +107,7 @@ namespace FreeSql
         /// <typeparam name="TMember">返回类型</typeparam>
         /// <param name="column">列</param>
         /// <returns></returns>
-        TMember Sum<TMember>(Expression<Func<T1, TMember>> column);
+        decimal Sum<TMember>(Expression<Func<T1, TMember>> column);
         /// <summary>
         /// 最小值
         /// </summary>
@@ -127,7 +128,7 @@ namespace FreeSql
         /// <typeparam name="TMember">返回类型</typeparam>
         /// <param name="column">列</param>
         /// <returns></returns>
-        TMember Avg<TMember>(Expression<Func<T1, TMember>> column);
+        double Avg<TMember>(Expression<Func<T1, TMember>> column);
 
         /// <summary>
         /// 指定别名
@@ -293,8 +294,9 @@ namespace FreeSql
         /// 传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
         /// </summary>
         /// <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
+        /// <param name="not">是否标识为NOT</param>
         /// <returns></returns>
-        ISelect<T1> WhereDynamic(object dywhere);
+        ISelect<T1> WhereDynamic(object dywhere, bool not = false);
 
         /// <summary>
         /// 多表查询时，该方法标记后，表达式条件将对所有表进行附加
@@ -359,9 +361,21 @@ namespace FreeSql
         /// 文档：https://github.com/2881099/FreeSql/wiki/%e8%b4%aa%e5%a9%aa%e5%8a%a0%e8%bd%bd#%E5%AF%BC%E8%88%AA%E5%B1%9E%E6%80%A7-onetomanymanytomany
         /// </summary>
         /// <typeparam name="TNavigate"></typeparam>
-        /// <param name="navigateSelector">选择一个集合的导航属性，也可通过 .Where 设置临时的关系映射，还可以 .Take(5) 每个子集合只取5条</param>
+        /// <param name="navigateSelector">选择一个集合的导航属性，如： .IncludeMany(a => a.Tags)<para></para>
+        /// 可以 .Where 设置临时的关系映射，如： .IncludeMany(a => a.Tags.Where(tag => tag.TypeId == a.Id))<para></para>
+        /// 可以 .Take(5) 每个子集合只取5条，如： .IncludeMany(a => a.Tags.Take(5))<para></para>
+        /// 可以 .Select 设置只查询部分字段，如： (a => new TNavigate { Title = a.Title }) 
+        /// </param>
         /// <param name="then">即能 ThenInclude，还可以二次过滤（这个 EFCore 做不到？）</param>
         /// <returns></returns>
         ISelect<T1> IncludeMany<TNavigate>(Expression<Func<T1, IEnumerable<TNavigate>>> navigateSelector, Action<ISelect<TNavigate>> then = null) where TNavigate : class;
+
+        /// <summary>
+        /// 实现 select .. from ( select ... from t ) a 这样的功能<para></para>
+        /// 使用 AsTable 方法也可以达到效果
+        /// </summary>
+        /// <param name="sql">SQL语句</param>
+        /// <returns></returns>
+        ISelect<T1> WithSql(string sql);
     }
 }

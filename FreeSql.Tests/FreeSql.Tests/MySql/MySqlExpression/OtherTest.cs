@@ -41,12 +41,37 @@ namespace FreeSql.Tests.MySqlExpression
             var t3 = select.Where(a => a.testFieldBool == false).ToList();
             var t4 = select.Where(a => !a.testFieldBool).ToList();
             var t5 = select.Where(a => a.testFieldBool).ToList();
+            var t51 = select.WhereCascade(a => a.testFieldBool).ToList();
 
             var t11 = select.Where(a => a.testFieldBoolNullable == true).ToList();
             var t22 = select.Where(a => a.testFieldBoolNullable != true).ToList();
             var t33 = select.Where(a => a.testFieldBoolNullable == false).ToList();
             var t44 = select.Where(a => !a.testFieldBoolNullable.Value).ToList();
             var t55 = select.Where(a => a.testFieldBoolNullable.Value).ToList();
+
+            var t111 = select.Where(a => a.testFieldBool == true && a.Id > 0).ToList();
+            var t222 = select.Where(a => a.testFieldBool != true && a.Id > 0).ToList();
+            var t333 = select.Where(a => a.testFieldBool == false && a.Id > 0).ToList();
+            var t444 = select.Where(a => !a.testFieldBool && a.Id > 0).ToList();
+            var t555 = select.Where(a => a.testFieldBool && a.Id > 0).ToList();
+
+            var t1111 = select.Where(a => a.testFieldBoolNullable == true && a.Id > 0).ToList();
+            var t2222 = select.Where(a => a.testFieldBoolNullable != true && a.Id > 0).ToList();
+            var t3333 = select.Where(a => a.testFieldBoolNullable == false && a.Id > 0).ToList();
+            var t4444 = select.Where(a => !a.testFieldBoolNullable.Value && a.Id > 0).ToList();
+            var t5555 = select.Where(a => a.testFieldBoolNullable.Value && a.Id > 0).ToList();
+
+            var t11111 = select.Where(a => a.testFieldBool == true && a.Id > 0 && a.testFieldBool == true).ToList();
+            var t22222 = select.Where(a => a.testFieldBool != true && a.Id > 0 && a.testFieldBool != true).ToList();
+            var t33333 = select.Where(a => a.testFieldBool == false && a.Id > 0 && a.testFieldBool == false).ToList();
+            var t44444 = select.Where(a => !a.testFieldBool && a.Id > 0 && !a.testFieldBool).ToList();
+            var t55555 = select.Where(a => a.testFieldBool && a.Id > 0 && a.testFieldBool).ToList();
+
+            var t111111 = select.Where(a => a.testFieldBoolNullable == true && a.Id > 0 && a.testFieldBoolNullable == true).ToList();
+            var t222222 = select.Where(a => a.testFieldBoolNullable != true && a.Id > 0 && a.testFieldBoolNullable != true).ToList();
+            var t333333 = select.Where(a => a.testFieldBoolNullable == false && a.Id > 0 && a.testFieldBoolNullable == false).ToList();
+            var t444444 = select.Where(a => !a.testFieldBoolNullable.Value && a.Id > 0 && !a.testFieldBoolNullable.Value).ToList();
+            var t555555 = select.Where(a => a.testFieldBoolNullable.Value && a.Id > 0 && a.testFieldBoolNullable.Value).ToList();
         }
 
         [Fact]
@@ -82,6 +107,11 @@ namespace FreeSql.Tests.MySqlExpression
             var sql111111 = select.Where(a => inarray.Contains(a.testFieldInt)).ToList();
             var sql112222 = select.Where(a => inarray.Contains(a.testFieldInt) == false).ToList();
             var sql113333 = select.Where(a => !inarray.Contains(a.testFieldInt)).ToList();
+
+            var inarray2n = Enumerable.Range(1, 3333).ToArray();
+            var sql1111111 = select.Where(a => inarray2n.Contains(a.testFieldInt)).ToList();
+            var sql1122222 = select.Where(a => inarray2n.Contains(a.testFieldInt) == false).ToList();
+            var sql1133333 = select.Where(a => !inarray2n.Contains(a.testFieldInt)).ToList();
         }
 
         [Table(Name = "tb_alltype")]

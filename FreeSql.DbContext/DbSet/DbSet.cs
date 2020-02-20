@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Threading;
 
 namespace FreeSql
 {
@@ -36,11 +37,10 @@ namespace FreeSql
         }
 
         ~DbSet() => this.Dispose();
-        bool _isdisposed = false;
+        int _disposeCounter;
         public void Dispose()
         {
-            if (_isdisposed) return;
-            _isdisposed = true;
+            if (Interlocked.Increment(ref _disposeCounter) != 1) return;
             try
             {
                 this._dicUpdateTimes.Clear();
@@ -79,13 +79,14 @@ namespace FreeSql
                     var itemType = item.GetType();
                     if (itemType == typeof(object)) return;
                     if (itemType.FullName.StartsWith("Submission#")) itemType = itemType.BaseType;
+                    if (_db.Orm.CodeFirst.GetTableByEntity(itemType)?.Primarys.Any() != true) return;
                     var dbset = _db.Set(itemType);
                     dbset?.GetType().GetMethod("TrackToList", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(dbset, new object[] { list });
                     return;
                 }
                 return;
             }
-
+            if (_table?.Primarys.Any() != true) return;
             foreach (var item in ls)
             {
                 var key = _db.Orm.GetEntityKeyString(_entityType, item, false);
@@ -107,8 +108,9 @@ namespace FreeSql
         internal ConcurrentDictionary<string, EntityState> _statesInternal => _states;
         TableInfo _tablePriv;
         protected TableInfo _table => _tablePriv ?? (_tablePriv = _db.Orm.CodeFirst.GetTableByEntity(_entityType));
-        ColumnInfo[] _tableIdentitysPriv;
+        ColumnInfo[] _tableIdentitysPriv, _tableServerTimesPriv;
         protected ColumnInfo[] _tableIdentitys => _tableIdentitysPriv ?? (_tableIdentitysPriv = _table.Primarys.Where(a => a.Attribute.IsIdentity).ToArray());
+        protected ColumnInfo[] _tableServerTimes => _tableServerTimesPriv ?? (_tableServerTimesPriv = _table.Primarys.Where(a => a.Attribute.ServerTime != DateTimeKind.Unspecified).ToArray());
         protected Type _entityType = typeof(TEntity);
         public Type EntityType => _entityType;
 
@@ -125,6 +127,7 @@ namespace FreeSql
             _entityType = entityType;
             _tablePriv = newtb ?? throw new Exception("DbSet.AsType 参数错误，请传入正确的实体类型");
             _tableIdentitysPriv = null;
+            _tableServerTimesPriv = null;
             return this;
         }
 
@@ -133,7 +136,16 @@ namespace FreeSql
         {
             if (_dicDbSetObjects.TryGetValue(et, out var tryds)) return tryds;
             _dicDbSetObjects.Add(et, tryds = _db.Set<object>().AsType(et));
+            if (_db.InternalDicSet.TryGetValue(et, out var tryds2))
+            {
+                var copyTo = typeof(DbSet<>).MakeGenericType(et).GetMethod("StatesCopyToDbSetObject", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(DbSet<object>) }, null);
+                copyTo?.Invoke(tryds2, new object[] { tryds });
+            }
             return tryds;
+        }
+        void StatesCopyToDbSetObject(DbSet<object> ds)
+        {
+            ds.AttachRange(_states.Values.OrderBy(a => a.Time).Select(a => a.Value).ToArray());
         }
 
         public class EntityState

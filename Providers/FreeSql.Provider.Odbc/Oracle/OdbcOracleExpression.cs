@@ -41,7 +41,9 @@ namespace FreeSql.Odbc.Oracle
                             case "System.UInt16":
                             case "System.UInt32":
                             case "System.UInt64": return $"cast({getExp(operandExp)} as number)";
-                            case "System.Guid": return $"substr(to_char({getExp(operandExp)}), 1, 36)";
+                            case "System.Guid":
+                                if (tsc.mapType == typeof(byte[])) return $"hextoraw({getExp(operandExp)})";
+                                return $"to_char({getExp(operandExp)})";
                         }
                     }
                     break;
@@ -68,23 +70,25 @@ namespace FreeSql.Odbc.Oracle
                                 case "System.UInt16":
                                 case "System.UInt32":
                                 case "System.UInt64": return $"cast({getExp(callExp.Arguments[0])} as number)";
-                                case "System.Guid": return $"substr(to_char({getExp(callExp.Arguments[0])}), 1, 36)";
+                                case "System.Guid":
+                                    if (tsc.mapType == typeof(byte[])) return $"hextoraw({getExp(callExp.Arguments[0])})";
+                                    return $"to_char({getExp(callExp.Arguments[0])})";
                             }
-                            break;
+                            return null;
                         case "NewGuid":
-                            break;
+                            return null;
                         case "Next":
                             if (callExp.Object?.Type == typeof(Random)) return "cast(dbms_random.value*1000000000 as smallint)";
-                            break;
+                            return null;
                         case "NextDouble":
                             if (callExp.Object?.Type == typeof(Random)) return "dbms_random.value";
-                            break;
+                            return null;
                         case "Random":
                             if (callExp.Method.DeclaringType.IsNumberType()) return "dbms_random.value";
-                            break;
+                            return null;
                         case "ToString":
                             if (callExp.Object != null) return callExp.Arguments.Count == 0 ? $"to_char({getExp(callExp.Object)})" : null;
-                            break;
+                            return null;
                     }
 
                     var objExp = callExp.Object;
@@ -99,14 +103,20 @@ namespace FreeSql.Odbc.Oracle
                         argIndex++;
                     }
                     if (objType == null) objType = callExp.Method.DeclaringType;
-                    if (objType != null || objType.IsArray || typeof(IList).IsAssignableFrom(callExp.Method.DeclaringType))
+                    if (objType != null || objType.IsArrayOrList())
                     {
+                        tsc.SetMapColumnTmp(null);
+                        var args1 = getExp(callExp.Arguments[argIndex]);
+                        var oldMapType = tsc.SetMapTypeReturnOld(tsc.mapTypeTmp);
+                        var oldDbParams = tsc.SetDbParamsReturnOld(null);
                         var left = objExp == null ? null : getExp(objExp);
+                        tsc.SetMapColumnTmp(null).SetMapTypeReturnOld(oldMapType);
+                        tsc.SetDbParamsReturnOld(oldDbParams);
                         switch (callExp.Method.Name)
                         {
                             case "Contains":
-                                //判断 in
-                                return $"({getExp(callExp.Arguments[argIndex])}) in {left}";
+                                //判断 in //在各大 Provider AdoProvider 中已约定，500元素分割, 3空格\r\n4空格
+                                return $"(({args1}) in {left.Replace(",   \r\n    \r\n", $") \r\n OR ({args1}) in (")})";
                         }
                     }
                     break;
@@ -169,8 +179,8 @@ namespace FreeSql.Odbc.Oracle
             {
                 switch (exp.Member.Name)
                 {
-                    case "Now": return "systimestamp";
-                    case "UtcNow": return "sys_extract_utc(systimestamp)";
+                    case "Now": return _common.Now;
+                    case "UtcNow": return _common.NowUtc;
                     case "Today": return "trunc(systimestamp)";
                     case "MinValue": return "to_timestamp('0001-01-01 00:00:00','YYYY-MM-DD HH24:MI:SS.FF6')";
                     case "MaxValue": return "to_timestamp('9999-12-31 23:59:59','YYYY-MM-DD HH24:MI:SS.FF6')";

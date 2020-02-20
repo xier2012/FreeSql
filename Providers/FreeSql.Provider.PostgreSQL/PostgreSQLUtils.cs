@@ -1,18 +1,17 @@
 ﻿using FreeSql.Internal;
+using FreeSql.Internal.Model;
 using Newtonsoft.Json.Linq;
 using Npgsql;
 using Npgsql.LegacyPostgis;
 using NpgsqlTypes;
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
 using System.Net;
 using System.Text;
-using System.Linq.Expressions;
-using System.Reflection;
 
 namespace FreeSql.PostgreSQL
 {
@@ -78,7 +77,7 @@ namespace FreeSql.PostgreSQL
             return value;
         }
 
-        public override DbParameter AppendParamter(List<DbParameter> _params, string parameterName, Type type, object value)
+        public override DbParameter AppendParamter(List<DbParameter> _params, string parameterName, ColumnInfo col, Type type, object value)
         {
             if (string.IsNullOrEmpty(parameterName)) parameterName = $"p_{_params?.Count}";
             if (value != null) value = getParamterValue(type, value);
@@ -88,6 +87,17 @@ namespace FreeSql.PostgreSQL
             //} else {
             var tp = _orm.CodeFirst.GetDbInfo(type)?.type;
             if (tp != null) ret.NpgsqlDbType = (NpgsqlDbType)tp.Value;
+            if (col != null)
+            {
+                var dbtype = (NpgsqlDbType)_orm.DbFirst.GetDbType(new DatabaseModel.DbColumnInfo { DbTypeText = col.DbTypeText });
+                if (dbtype != NpgsqlDbType.Unknown)
+                {
+                    ret.NpgsqlDbType = dbtype;
+                    if (col.DbSize != 0) ret.Size = col.DbSize;
+                    if (col.DbPrecision != 0) ret.Precision = col.DbPrecision;
+                    if (col.DbScale != 0) ret.Scale = col.DbScale;
+                }
+            }
             //}
             _params?.Add(ret);
             return ret;
@@ -108,12 +118,18 @@ namespace FreeSql.PostgreSQL
             });
 
         public override string FormatSql(string sql, params object[] args) => sql?.FormatPostgreSQL(args);
-        public override string QuoteSqlName(string name)
+        public override string QuoteSqlName(params string[] name)
         {
-            var nametrim = name.Trim();
-            if (nametrim.StartsWith("(") && nametrim.EndsWith(")"))
-                return nametrim; //原生SQL
-            return $"\"{nametrim.Trim('"').Replace(".", "\".\"")}\"";
+            if (name.Length == 1)
+            {
+                var nametrim = name[0].Trim();
+                if (nametrim.StartsWith("(") && nametrim.EndsWith(")"))
+                    return nametrim; //原生SQL
+                if (nametrim.StartsWith("\"") && nametrim.EndsWith("\""))
+                    return nametrim;
+                return $"\"{nametrim.Replace(".", "\".\"")}\"";
+            }
+            return $"\"{string.Join("\".\"", name)}\"";
         }
         public override string TrimQuoteSqlName(string name)
         {
@@ -122,14 +138,17 @@ namespace FreeSql.PostgreSQL
                 return nametrim; //原生SQL
             return $"{nametrim.Trim('"').Replace("\".\"", ".").Replace(".\"", ".")}";
         }
+        public override string[] SplitTableName(string name) => GetSplitTableNames(name, '"', '"', 2);
         public override string QuoteParamterName(string name) => $"@{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
         public override string IsNull(string sql, object value) => $"coalesce({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types) => $"{string.Join(" || ", objs)}";
         public override string Mod(string left, string right, Type leftType, Type rightType) => $"{left} % {right}";
         public override string Div(string left, string right, Type leftType, Type rightType) => $"{left} / {right}";
+        public override string Now => "current_timestamp";
+        public override string NowUtc => "(current_timestamp at time zone 'UTC')";
 
         public override string QuoteWriteParamter(Type type, string paramterName) => paramterName;
-        public override string QuoteReadColumn(Type type, string columnName) => columnName;
+        public override string QuoteReadColumn(Type type, Type mapType, string columnName) => columnName;
 
         static ConcurrentDictionary<Type, bool> _dicIsAssignableFromPostgisGeometry = new ConcurrentDictionary<Type, bool>();
         public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
@@ -137,23 +156,13 @@ namespace FreeSql.PostgreSQL
             if (value == null) return "NULL";
             if (_dicIsAssignableFromPostgisGeometry.GetOrAdd(type, t2 => typeof(PostgisGeometry).IsAssignableFrom(type.IsArray ? type.GetElementType() : type)))
             {
-                var pam = AppendParamter(specialParams, null, type, value);
+                var pam = AppendParamter(specialParams, null, null, type, value);
                 return pam.ParameterName;
             }
             value = getParamterValue(type, value);
             var type2 = value.GetType();
-            if (type2 == typeof(byte[]))
-            {
-                var bytes = value as byte[];
-                var sb = new StringBuilder().Append("'\\x");
-                foreach (var vc in bytes)
-                {
-                    if (vc < 10) sb.Append("0");
-                    sb.Append(vc.ToString("X"));
-                }
-                return sb.Append("'").ToString(); //val = Encoding.UTF8.GetString(val as byte[]);
-            }
-            else if (type2 == typeof(TimeSpan) || type2 == typeof(TimeSpan?))
+            if (type2 == typeof(byte[])) return $"'\\x{CommonUtils.BytesSqlRaw(value as byte[])}'";
+            if (type2 == typeof(TimeSpan) || type2 == typeof(TimeSpan?))
             {
                 var ts = (TimeSpan)value;
                 return $"'{Math.Min(24, (int)Math.Floor(ts.TotalHours))}:{ts.Minutes}:{ts.Seconds}'";

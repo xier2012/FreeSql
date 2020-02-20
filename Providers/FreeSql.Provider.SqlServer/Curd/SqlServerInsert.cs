@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,10 +18,19 @@ namespace FreeSql.SqlServer.Curd
         {
         }
 
-        public override int ExecuteAffrows() => base.SplitExecuteAffrows(1000, 2100);
-        public override long ExecuteIdentity() => base.SplitExecuteIdentity(1000, 2100);
-        public override List<T1> ExecuteInserted() => base.SplitExecuteInserted(1000, 2100);
+        internal IFreeSql InternalOrm => _orm as IFreeSql;
+        internal DbConnection InternalConnection => _connection;
+        internal DbTransaction InternalTransaction => _transaction;
 
+        public override int ExecuteAffrows() => base.SplitExecuteAffrows(_batchValuesLimit > 0 ? _batchValuesLimit : 1000, _batchParameterLimit > 0 ? _batchParameterLimit : 2100);
+        public override long ExecuteIdentity() => base.SplitExecuteIdentity(_batchValuesLimit > 0 ? _batchValuesLimit : 1000, _batchParameterLimit > 0 ? _batchParameterLimit : 2100);
+        public override List<T1> ExecuteInserted() => base.SplitExecuteInserted(_batchValuesLimit > 0 ? _batchValuesLimit : 1000, _batchParameterLimit > 0 ? _batchParameterLimit : 2100);
+
+        public override string ToSql()
+        {
+            var versionGreaterThan10 = (_commonUtils as SqlServerUtils).ServerVersion > 10;
+            return this.ToSqlValuesOrSelectUnionAll(versionGreaterThan10);
+        }
         protected override long RawExecuteIdentity()
         {
             var sql = this.ToSql();
@@ -58,14 +68,24 @@ namespace FreeSql.SqlServer.Curd
             foreach (var col in _table.Columns.Values)
             {
                 if (colidx > 0) sb.Append(", ");
-                sb.Append(_commonUtils.QuoteReadColumn(col.Attribute.MapType, $"INSERTED.{_commonUtils.QuoteSqlName(col.Attribute.Name)}")).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
+                sb.Append(_commonUtils.QuoteReadColumn(col.CsType, col.Attribute.MapType, $"INSERTED.{_commonUtils.QuoteSqlName(col.Attribute.Name)}")).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
                 ++colidx;
             }
 
-            var validx = sql.IndexOf(") VALUES");
-            if (validx == -1) throw new ArgumentException("找不到 VALUES");
-            sb.Insert(0, sql.Substring(0, validx + 1));
-            sb.Append(sql.Substring(validx + 1));
+            if ((_commonUtils as SqlServerUtils).ServerVersion > 10)
+            {
+                var validx = sql.IndexOf(") VALUES");
+                if (validx == -1) throw new ArgumentException("找不到 VALUES");
+                sb.Insert(0, sql.Substring(0, validx + 1));
+                sb.Append(sql.Substring(validx + 1));
+            }
+            else
+            {
+                var validx = sql.IndexOf(") SELECT ");
+                if (validx == -1) throw new ArgumentException("找不到 SELECT");
+                sb.Insert(0, sql.Substring(0, validx + 1));
+                sb.Append(sql.Substring(validx + 1));
+            }
 
             sql = sb.ToString();
             var before = new Aop.CurdBeforeEventArgs(_table.Type, _table, Aop.CurdType.Insert, sql, _params);
@@ -132,14 +152,24 @@ namespace FreeSql.SqlServer.Curd
             foreach (var col in _table.Columns.Values)
             {
                 if (colidx > 0) sb.Append(", ");
-                sb.Append(_commonUtils.QuoteReadColumn(col.Attribute.MapType, $"INSERTED.{_commonUtils.QuoteSqlName(col.Attribute.Name)}")).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
+                sb.Append(_commonUtils.QuoteReadColumn(col.CsType, col.Attribute.MapType, $"INSERTED.{_commonUtils.QuoteSqlName(col.Attribute.Name)}")).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
                 ++colidx;
             }
 
-            var validx = sql.IndexOf(") VALUES");
-            if (validx == -1) throw new ArgumentException("找不到 VALUES");
-            sb.Insert(0, sql.Substring(0, validx + 1));
-            sb.Append(sql.Substring(validx + 1));
+            if ((_commonUtils as SqlServerUtils).ServerVersion > 10)
+            {
+                var validx = sql.IndexOf(") VALUES");
+                if (validx == -1) throw new ArgumentException("找不到 VALUES");
+                sb.Insert(0, sql.Substring(0, validx + 1));
+                sb.Append(sql.Substring(validx + 1));
+            }
+            else
+            {
+                var validx = sql.IndexOf(") SELECT ");
+                if (validx == -1) throw new ArgumentException("找不到 SELECT");
+                sb.Insert(0, sql.Substring(0, validx + 1));
+                sb.Append(sql.Substring(validx + 1));
+            }
 
             sql = sb.ToString();
             var before = new Aop.CurdBeforeEventArgs(_table.Type, _table, Aop.CurdType.Insert, sql, _params);

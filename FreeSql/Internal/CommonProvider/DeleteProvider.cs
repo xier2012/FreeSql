@@ -85,14 +85,10 @@ namespace FreeSql.Internal.CommonProvider
         }
         public abstract List<T1> ExecuteDeleted();
 
-        public IDelete<T1> Where(Expression<Func<T1, bool>> exp) => this.Where(_commonExpression.ExpressionWhereLambdaNoneForeignObject(null, _table, null, exp?.Body, null));
+        public IDelete<T1> Where(Expression<Func<T1, bool>> exp) => this.Where(_commonExpression.ExpressionWhereLambdaNoneForeignObject(null, _table, null, exp?.Body, null, _params));
         public IDelete<T1> Where(string sql, object parms = null)
         {
             if (string.IsNullOrEmpty(sql)) return this;
-            var args = new Aop.WhereEventArgs(sql, parms);
-            _orm.Aop.Where?.Invoke(this, new Aop.WhereEventArgs(sql, parms));
-            if (args.IsCancel == true) return this;
-
             if (++_whereTimes > 1) _where.Append(" AND ");
             _where.Append("(").Append(sql).Append(")");
             if (parms != null) _params.AddRange(_commonUtils.GetDbParamtersByObject(sql, parms));
@@ -100,7 +96,9 @@ namespace FreeSql.Internal.CommonProvider
         }
         public IDelete<T1> Where(T1 item) => this.Where(new[] { item });
         public IDelete<T1> Where(IEnumerable<T1> items) => this.Where(_commonUtils.WhereItems(_table, "", items));
-        public IDelete<T1> WhereDynamic(object dywhere) => this.Where(_commonUtils.WhereObject(_table, "", dywhere));
+        public IDelete<T1> WhereDynamic(object dywhere, bool not = false) => not == false ?
+            this.Where(_commonUtils.WhereObject(_table, "", dywhere)) :
+            this.Where($"not({_commonUtils.WhereObject(_table, "", dywhere)})");
 
         public IDelete<T1> DisableGlobalFilter(params string[] name)
         {
@@ -124,9 +122,11 @@ namespace FreeSql.Internal.CommonProvider
         {
             if (_tableRule == null) return _table.DbName;
             var newname = _tableRule(_table.DbName);
+            if (newname == _table.DbName) return _table.DbName;
             if (string.IsNullOrEmpty(newname)) return _table.DbName;
             if (_orm.CodeFirst.IsSyncStructureToLower) newname = newname.ToLower();
             if (_orm.CodeFirst.IsSyncStructureToUpper) newname = newname.ToUpper();
+            if (_orm.CodeFirst.IsAutoSyncStructure) _orm.CodeFirst.SyncStructure(_table.Type, newname);
             return newname;
         }
         public IDelete<T1> AsTable(Func<string, string> tableRule)

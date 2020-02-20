@@ -1,4 +1,5 @@
 ﻿using FreeSql.Internal;
+using FreeSql.Internal.Model;
 using MySql.Data.MySqlClient;
 using SafeObjectPool;
 using System;
@@ -13,9 +14,14 @@ namespace FreeSql.MySql
     {
 
         public MySqlAdo() : base(DataType.MySql) { }
-        public MySqlAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings) : base(DataType.MySql)
+        public MySqlAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings, Func<DbConnection> connectionFactory) : base(DataType.MySql)
         {
             base._util = util;
+            if (connectionFactory != null)
+            {
+                MasterPool = new FreeSql.Internal.CommonProvider.DbConnectionPool(DataType.MySql, connectionFactory);
+                return;
+            }
             if (!string.IsNullOrEmpty(masterConnectionString))
                 MasterPool = new MySqlConnectionPool("主库", masterConnectionString, null, null);
             if (slaveConnectionStrings != null)
@@ -27,12 +33,12 @@ namespace FreeSql.MySql
                 }
             }
         }
-        static DateTime dt1970 = new DateTime(1970, 1, 1);
-        public override object AddslashesProcessParam(object param, Type mapType)
+        public override object AddslashesProcessParam(object param, Type mapType, ColumnInfo mapColumn)
         {
             if (param == null) return "NULL";
-            if (mapType != null && mapType != param.GetType())
+            if (mapType != null && mapType != param.GetType() && (param is IEnumerable == false))
                 param = Utils.GetDataReaderValue(mapType, param);
+
             if (param is bool || param is bool?)
                 return (bool)param ? 1 : 0;
             else if (param is string || param is char)
@@ -45,15 +51,13 @@ namespace FreeSql.MySql
                 return string.Concat("'", ((DateTime)param).ToString("yyyy-MM-dd HH:mm:ss.fff"), "'");
             else if (param is TimeSpan || param is TimeSpan?)
                 return ((TimeSpan)param).Ticks / 10;
+            else if (param is byte[])
+                return $"0x{CommonUtils.BytesSqlRaw(param as byte[])}";
             else if (param is MygisGeometry)
                 return string.Concat("ST_GeomFromText('", (param as MygisGeometry).AsText().Replace("'", "''"), "')");
             else if (param is IEnumerable)
-            {
-                var sb = new StringBuilder();
-                var ie = param as IEnumerable;
-                foreach (var z in ie) sb.Append(",").Append(AddslashesProcessParam(z, mapType));
-                return sb.Length == 0 ? "(NULL)" : sb.Remove(0, 1).Insert(0, "(").Append(")").ToString();
-            }
+                return AddslashesIEnumerable(param, mapType, mapColumn);
+
             return string.Concat("'", param.ToString().Replace("'", "''"), "'");
         }
 
@@ -62,9 +66,11 @@ namespace FreeSql.MySql
             return new MySqlCommand();
         }
 
-        protected override void ReturnConnection(ObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
+        protected override void ReturnConnection(IObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
         {
-            (pool as MySqlConnectionPool).Return(conn, ex);
+            var rawPool = pool as MySqlConnectionPool;
+            if (rawPool != null) rawPool.Return(conn, ex);
+            else pool.Return(conn);
         }
 
         protected override DbParameter[] GetDbParamtersByObject(string sql, object obj) => _util.GetDbParamtersByObject(sql, obj);

@@ -137,6 +137,19 @@ namespace FreeSql.Tests.Odbc.Default
             public string name { get; set; } //这是join表的属性
             public int ParentId { get; set; } //这是join表的属性
         }
+        class TestDto2
+        {
+            public int id { get; set; }
+            public string name { get; set; } //这是join表的属性
+            public int ParentId { get; set; } //这是join表的属性
+
+            public TestDto2() { }
+            public TestDto2(int id, string name)
+            {
+                this.id = id;
+                this.name = name;
+            }
+        }
         [Fact]
         public void ToList()
         {
@@ -150,6 +163,18 @@ namespace FreeSql.Tests.Odbc.Default
             var testDto22 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto());
             var testDto33 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto { });
             var testDto44 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto() { });
+
+            var testDto211 = select.Limit(10).ToList(a => new TestDto2(a.Id, a.Title));
+            var testDto212 = select.Limit(10).ToList(a => new TestDto2());
+            var testDto213 = select.Limit(10).ToList(a => new TestDto2 { });
+            var testDto214 = select.Limit(10).ToList(a => new TestDto2() { });
+            var testDto215 = select.Limit(10).ToList<TestDto2>();
+
+            var testDto2211 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2(a.Id, a.Title));
+            var testDto2222 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2());
+            var testDto2233 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2 { });
+            var testDto2244 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2() { });
+            var testDto2255 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList<TestDto2>();
 
             g.odbc.Insert<TestGuidIdToList>().AppendData(new TestGuidIdToList()).ExecuteAffrows();
             var testGuidId5 = g.odbc.Select<TestGuidIdToList>().ToList();
@@ -639,6 +664,7 @@ namespace FreeSql.Tests.Odbc.Default
             .OrderBy(a => a.Key.tt2)
             .OrderByDescending(a => a.Count())
             .Limit(2)
+            .Count(out var trycount)
             .ToList(a => new
             {
                 a.Key.tt2,
@@ -651,6 +677,9 @@ namespace FreeSql.Tests.Odbc.Default
 
             var testpid1 = g.odbc.Insert<TestTypeInfo>().AppendData(new TestTypeInfo { Name = "Name" + DateTime.Now.ToString("yyyyMMddHHmmss") }).ExecuteIdentity();
             g.odbc.Insert<TestInfo>().AppendData(new TestInfo { Title = "Title" + DateTime.Now.ToString("yyyyMMddHHmmss"), CreateTime = DateTime.Now, TypeGuid = (int)testpid1 }).ExecuteAffrows();
+
+            var fkfjfj = select.GroupBy(a => a.Title)
+                .ToList(a => a.Sum(a.Value.TypeGuid));
 
             var aggsql1 = select
                 .GroupBy(a => a.Title)
@@ -728,12 +757,15 @@ namespace FreeSql.Tests.Odbc.Default
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Sum(b => b.Id)
+                count = (long)select.As("b").Sum(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.[Id] as1, a.[Clicks] as2, a.[TypeGuid] as3, a.[Title] as4, a.[CreateTime] as5, (SELECT TOP 1 sum(b.[Id]) 
+	FROM [tb_topic22] b) as6 
+FROM [tb_topic22] a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Sum(b => b.Id)
+                count = (long)select.As("b").Sum(b => b.Id)
             });
         }
         [Fact]
@@ -742,12 +774,15 @@ namespace FreeSql.Tests.Odbc.Default
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Min(b => b.Id)
+                count = select.As("b").Min(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.[Id] as1, a.[Clicks] as2, a.[TypeGuid] as3, a.[Title] as4, a.[CreateTime] as5, (SELECT TOP 1 min(b.[Id]) 
+	FROM [tb_topic22] b) as6 
+FROM [tb_topic22] a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Min(b => b.Id)
+                count = select.As("b").Min(b => b.Id)
             });
         }
         [Fact]
@@ -756,12 +791,15 @@ namespace FreeSql.Tests.Odbc.Default
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Max(b => b.Id)
+                count = select.As("b").Max(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.[Id] as1, a.[Clicks] as2, a.[TypeGuid] as3, a.[Title] as4, a.[CreateTime] as5, (SELECT TOP 1 max(b.[Id]) 
+	FROM [tb_topic22] b) as6 
+FROM [tb_topic22] a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Max(b => b.Id)
+                count = select.As("b").Max(b => b.Id)
             });
         }
         [Fact]
@@ -770,13 +808,26 @@ namespace FreeSql.Tests.Odbc.Default
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Avg(b => b.Id)
+                count = select.As("b").Avg(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.[Id] as1, a.[Clicks] as2, a.[TypeGuid] as3, a.[Title] as4, a.[CreateTime] as5, (SELECT TOP 1 avg(b.[Id]) 
+	FROM [tb_topic22] b) as6 
+FROM [tb_topic22] a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Avg(b => b.Id)
+                count = select.As("b").Avg(b => b.Id)
             });
+        }
+        [Fact]
+        public void WhereIn()
+        {
+            var subquery = select.Where(a => select.As("b").ToList(b => b.Title).Contains(a.Id.ToString())).ToSql();
+            Assert.Equal(@"SELECT a.[Id], a.[Clicks], a.[TypeGuid], a.[Title], a.[CreateTime] 
+FROM [tb_topic22] a 
+WHERE (((cast(a.[Id] as nvarchar)) in (SELECT b.[Title] 
+	FROM [tb_topic22] b)))", subquery);
+            var subqueryList = select.Where(a => select.As("b").ToList(b => b.Title).Contains(a.Id.ToString())).ToList();
         }
         [Fact]
         public void As()
@@ -850,6 +901,39 @@ namespace FreeSql.Tests.Odbc.Default
             query = select.LeftJoin("TestTypeInfo b on b.Guid = a.TypeGuid and b.Name = @bname", new { bname = "xxx" }).AsTable(tableRule);
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.[Id], a.[Clicks], a.[TypeGuid], a.[Title], a.[CreateTime] FROM [tb_topic22AsTable1] a LEFT JOIN TestTypeInfo b on b.Guid = a.TypeGuid and b.Name = @bname", sql);
+
+            query = select.AsTable((_, old) => old).AsTable((_, old) => old);
+            sql = query.ToSql().Replace("\r\n", "");
+            Assert.Equal("SELECT  * from (SELECT a.[Id], a.[Clicks], a.[TypeGuid], a.[Title], a.[CreateTime] FROM [tb_topic22] a) ftb UNION ALLSELECT  * from (SELECT a.[Id], a.[Clicks], a.[TypeGuid], a.[Title], a.[CreateTime] FROM [tb_topic22] a) ftb", sql);
+            query.ToList();
+
+            query = select.AsTable((_, old) => old).AsTable((_, old) => old);
+            sql = query.ToSql("count(1) as1").Replace("\r\n", "");
+            Assert.Equal("SELECT  * from (SELECT count(1) as1 FROM [tb_topic22] a) ftb UNION ALLSELECT  * from (SELECT count(1) as1 FROM [tb_topic22] a) ftb", sql);
+            query.Count();
+
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Max(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Min(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Sum(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Avg(a => a.Id);
+
+            var sqlsss = select
+                .AsTable((type, old) => type == typeof(Topic) ? $"{old}_1" : null)
+                .AsTable((type, old) => type == typeof(Topic) ? $"{old}_2" : null)
+                .ToSql(a => new
+                {
+                    a.Id,
+                    a.Clicks
+                }, FieldAliasOptions.AsProperty);
+
+            var slsld3 = select
+                .AsTable((type, old) => type == typeof(Topic) ? $"({sqlsss})" : null)
+                .Page(1, 20)
+                .ToList(a => new
+                {
+                    a.Id,
+                    a.Clicks
+                });
         }
 
         public class TestInclude_OneToManyModel1
@@ -1335,6 +1419,26 @@ namespace FreeSql.Tests.Odbc.Default
             Assert.Equal(2, g.odbc.Select<ToUpd3Pk>().Where(a => a.name.StartsWith("name")).ToUpdate().Set(a => a.name, "nick?").ExecuteAffrows());
             Assert.Equal(5, g.odbc.Select<ToUpd3Pk>().Count());
             Assert.Equal(5, g.odbc.Select<ToUpd3Pk>().Where(a => a.name.StartsWith("nick")).Count());
+        }
+
+        [Fact]
+        public void ForUpdate()
+        {
+            var orm = g.odbc;
+
+            Assert.Equal("安全起见，请务必在事务开启之后，再使用 ForUpdate",
+                Assert.Throws<Exception>(() => orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToList())?.Message);
+
+            orm.Transaction(() =>
+            {
+                var sql = orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToSql().Replace("\r\n", "");
+                Assert.Equal("SELECT TOP 1 a.[id], a.[name] FROM [ToUpd1Pk] a", sql);
+                orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToList();
+
+                sql = orm.Select<ToUpd1Pk>().ForUpdate(true).Limit(1).ToSql().Replace("\r\n", "");
+                Assert.Equal("SELECT TOP 1 a.[id], a.[name] FROM [ToUpd1Pk] a", sql);
+                orm.Select<ToUpd1Pk>().ForUpdate(true).Limit(1).ToList();
+            });
         }
     }
 }

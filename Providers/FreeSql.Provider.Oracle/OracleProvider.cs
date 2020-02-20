@@ -3,7 +3,9 @@ using FreeSql.Internal.CommonProvider;
 using FreeSql.Oracle.Curd;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
+using System.Threading;
 
 namespace FreeSql.Oracle
 {
@@ -27,12 +29,12 @@ namespace FreeSql.Oracle
         public IAop Aop { get; }
         public ICodeFirst CodeFirst { get; }
         public IDbFirst DbFirst { get; }
-        public OracleProvider(string masterConnectionString, string[] slaveConnectionString)
+        public OracleProvider(string masterConnectionString, string[] slaveConnectionString, Func<DbConnection> connectionFactory = null)
         {
             this.InternalCommonUtils = new OracleUtils(this);
             this.InternalCommonExpression = new OracleExpression(this.InternalCommonUtils);
 
-            this.Ado = new OracleAdo(this.InternalCommonUtils, masterConnectionString, slaveConnectionString);
+            this.Ado = new OracleAdo(this.InternalCommonUtils, masterConnectionString, slaveConnectionString, connectionFactory);
             this.Aop = new AopProvider();
 
             this.DbFirst = new OracleDbFirst(this, this.InternalCommonUtils, this.InternalCommonExpression);
@@ -43,18 +45,16 @@ namespace FreeSql.Oracle
         internal CommonExpression InternalCommonExpression { get; }
 
         public void Transaction(Action handler) => Ado.Transaction(handler);
-        public void Transaction(Action handler, TimeSpan timeout) => Ado.Transaction(handler, timeout);
+        public void Transaction(TimeSpan timeout, Action handler) => Ado.Transaction(timeout, handler);
+        public void Transaction(IsolationLevel isolationLevel, TimeSpan timeout, Action handler) => Ado.Transaction(isolationLevel, timeout, handler);
 
         public GlobalFilter GlobalFilter { get; } = new GlobalFilter();
 
-        ~OracleProvider()
-        {
-            this.Dispose();
-        }
-        bool _isdisposed = false;
+        ~OracleProvider() => this.Dispose();
+        int _disposeCounter;
         public void Dispose()
         {
-            if (_isdisposed) return;
+            if (Interlocked.Increment(ref _disposeCounter) != 1) return;
             (this.Ado as AdoProvider)?.Dispose();
         }
     }

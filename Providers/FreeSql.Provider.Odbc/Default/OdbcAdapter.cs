@@ -1,4 +1,6 @@
-﻿using System;
+﻿using FreeSql.Internal;
+using FreeSql.Internal.Model;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -43,7 +45,7 @@ namespace FreeSql.Odbc.Default
         public virtual char QuoteSqlNameRight => ']';
 
         public virtual string FieldSql(Type type, string columnName) => columnName;
-        public virtual string UnicodeStringRawSql(object value) => value == null ? "NULL" : string.Concat("N'", value.ToString().Replace("'", "''"), "'");
+        public virtual string UnicodeStringRawSql(object value, ColumnInfo mapColumn) => value == null ? "NULL" : string.Concat("N'", value.ToString().Replace("'", "''"), "'");
         public virtual string DateTimeRawSql(object value)
         {
             if (value == null) return "NULL";
@@ -54,14 +56,7 @@ namespace FreeSql.Odbc.Default
         public virtual string ByteRawSql(object value)
         {
             if (value == null) return "NULL";
-            var bytes = value as byte[];
-            var sb = new StringBuilder().Append("0x");
-            foreach (var vc in bytes)
-            {
-                if (vc < 10) sb.Append("0");
-                sb.Append(vc.ToString("X"));
-            }
-            return sb.ToString();
+            return $"0x{CommonUtils.BytesSqlRaw(value as byte[])}";
         }
 
         public virtual string CastSql(string sql, string to) => $"cast({sql} as {to})";

@@ -136,6 +136,19 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             public string name { get; set; } //这是join表的属性
             public int ParentId { get; set; } //这是join表的属性
         }
+        class TestDto2
+        {
+            public int id { get; set; }
+            public string name { get; set; } //这是join表的属性
+            public int ParentId { get; set; } //这是join表的属性
+
+            public TestDto2() { }
+            public TestDto2(int id, string name)
+            {
+                this.id = id;
+                this.name = name;
+            }
+        }
         [Fact]
         public void ToList()
         {
@@ -150,6 +163,17 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var testDto33 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto { });
             var testDto44 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto() { });
 
+            var testDto211 = select.Limit(10).ToList(a => new TestDto2(a.Id, a.Title));
+            var testDto212 = select.Limit(10).ToList(a => new TestDto2());
+            var testDto213 = select.Limit(10).ToList(a => new TestDto2 { });
+            var testDto214 = select.Limit(10).ToList(a => new TestDto2() { });
+            var testDto215 = select.Limit(10).ToList<TestDto2>();
+
+            var testDto2211 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2(a.Id, a.Title));
+            var testDto2222 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2());
+            var testDto2233 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2 { });
+            var testDto2244 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2() { });
+            var testDto2255 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList<TestDto2>();
 
             var t1 = g.pgsql.Select<TestInfo>().Where("").Where(a => a.Id > 0).Skip(100).Limit(200).ToSql();
             var t2 = g.pgsql.Select<TestInfo>().As("b").Where("").Where(a => a.Id > 0).Skip(100).Limit(200).ToSql();
@@ -389,11 +413,6 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a LEFT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\"", sql);
             query.ToList();
-
-            query = select.LeftJoin("\"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", new { bname = "xxx" });
-            sql = query.ToSql().Replace("\r\n", "");
-            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a LEFT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", sql);
-            query.ToList();
         }
         [Fact]
         public void InnerJoin()
@@ -458,12 +477,6 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a INNER JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\"", sql);
             query.ToList();
-
-            query = select.InnerJoin("\"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", new { bname = "xxx" });
-            sql = query.ToSql().Replace("\r\n", "");
-            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a INNER JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", sql);
-            query.ToList();
-
         }
         [Fact]
         public void RightJoin()
@@ -528,12 +541,6 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a RIGHT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\"", sql);
             query.ToList();
-
-            query = select.RightJoin("\"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", new { bname = "xxx" });
-            sql = query.ToSql().Replace("\r\n", "");
-            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a RIGHT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", sql);
-            query.ToList();
-
         }
         [Fact]
         public void Where()
@@ -600,9 +607,9 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             query2.ToList();
 
             //������϶����㲻��
-            query = select.Where("a.\"clicks\" > 100 and a.\"id\" = ?", new { id = 10 });
+            query = select.Where("a.\"clicks\" > 100 and a.\"id\" = @id", new { id = 10 });
             sql = query.ToSql().Replace("\r\n", "");
-            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a WHERE (a.\"clicks\" > 100 and a.\"id\" = ?)", sql);
+            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a WHERE (a.\"clicks\" > 100 and a.\"id\" = @id)", sql);
             query.ToList();
         }
         [Fact]
@@ -648,9 +655,9 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             query2.ToList();
 
             //������϶����㲻��
-            query = select.WhereIf(true, "a.\"clicks\" > 100 and a.\"id\" = ?", new { id = 10 });
+            query = select.WhereIf(true, "a.\"clicks\" > 100 and a.\"id\" = @id", new { id = 10 });
             sql = query.ToSql().Replace("\r\n", "");
-            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a WHERE (a.\"clicks\" > 100 and a.\"id\" = ?)", sql);
+            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a WHERE (a.\"clicks\" > 100 and a.\"id\" = @id)", sql);
             query.ToList();
 
             // ==========================================WhereIf(false)
@@ -695,7 +702,7 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             query2.ToList();
 
             //������϶����㲻��
-            query = select.WhereIf(false, "a.\"clicks\" > 100 and a.\"id\" = ?", new { id = 10 });
+            query = select.WhereIf(false, "a.\"clicks\" > 100 and a.\"id\" = @id", new { id = 10 });
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a", sql);
             query.ToList();
@@ -727,6 +734,7 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             .OrderByDescending(a => a.Count())
             .Offset(10)
             .Limit(2)
+            .Count(out var trycount)
             .ToList(a => new
             {
                 a.Key.tt2,
@@ -739,6 +747,9 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
 
             var testpid1 = g.pgsql.Insert<TestTypeInfo>().AppendData(new TestTypeInfo { Name = "Name" + DateTime.Now.ToString("yyyyMMddHHmmss") }).ExecuteIdentity();
             g.pgsql.Insert<TestInfo>().AppendData(new TestInfo { Title = "Title" + DateTime.Now.ToString("yyyyMMddHHmmss"), CreateTime = DateTime.Now, TypeGuid = (int)testpid1 }).ExecuteAffrows();
+
+            var fkfjfj = select.GroupBy(a => a.Title)
+                .ToList(a => a.Sum(a.Value.TypeGuid));
 
             var aggsql1 = select
                 .GroupBy(a => a.Title)
@@ -832,12 +843,16 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = (long)select.Sum(b => b.Id)
+                count = (long)select.As("b").Sum(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""id"" as1, a.""clicks"" as2, a.""typeguid"" as3, a.""title"" as4, a.""createtime"" as5, (SELECT sum(b.""id"") 
+	FROM ""tb_topic"" b 
+	limit 1) as6 
+FROM ""tb_topic"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = (long)select.Sum(b => b.Id)
+                count = (long)select.As("b").Sum(b => b.Id)
             });
         }
         [Fact]
@@ -846,12 +861,16 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Min(b => b.Id)
+                count = select.As("b").Min(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""id"" as1, a.""clicks"" as2, a.""typeguid"" as3, a.""title"" as4, a.""createtime"" as5, (SELECT min(b.""id"") 
+	FROM ""tb_topic"" b 
+	limit 1) as6 
+FROM ""tb_topic"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Min(b => b.Id)
+                count = select.As("b").Min(b => b.Id)
             });
         }
         [Fact]
@@ -860,12 +879,16 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Max(b => b.Id)
+                count = select.As("b").Max(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""id"" as1, a.""clicks"" as2, a.""typeguid"" as3, a.""title"" as4, a.""createtime"" as5, (SELECT max(b.""id"") 
+	FROM ""tb_topic"" b 
+	limit 1) as6 
+FROM ""tb_topic"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Max(b => b.Id)
+                count = select.As("b").Max(b => b.Id)
             });
         }
         [Fact]
@@ -874,13 +897,27 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Avg(b => b.Id)
+                count = select.As("b").Avg(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""id"" as1, a.""clicks"" as2, a.""typeguid"" as3, a.""title"" as4, a.""createtime"" as5, (SELECT avg(b.""id"") 
+	FROM ""tb_topic"" b 
+	limit 1) as6 
+FROM ""tb_topic"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Avg(b => b.Id)
+                count = select.As("b").Avg(b => b.Id)
             });
+        }
+        [Fact]
+        public void WhereIn()
+        {
+            var subquery = select.Where(a => select.As("b").ToList(b => b.Title).Contains(a.Id.ToString())).ToSql();
+            Assert.Equal(@"SELECT a.""id"", a.""clicks"", a.""typeguid"", a.""title"", a.""createtime"" 
+FROM ""tb_topic"" a 
+WHERE ((((a.""id"")::varchar) in (SELECT b.""title"" 
+	FROM ""tb_topic"" b)))", subquery);
+            var subqueryList = select.Where(a => select.As("b").ToList(b => b.Title).Contains(a.Id.ToString())).ToList();
         }
         [Fact]
         public void As()
@@ -951,9 +988,42 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topicastable1\" a LEFT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\"", sql);
 
-            query = select.LeftJoin("\"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", new { bname = "xxx" }).AsTable(tableRule);
+            query = select.LeftJoin("\"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = @bname", new { bname = "xxx" }).AsTable(tableRule);
             sql = query.ToSql().Replace("\r\n", "");
-            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topicastable1\" a LEFT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = ?", sql);
+            Assert.Equal("SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topicastable1\" a LEFT JOIN \"testtypeinfo\" b on b.\"guid\" = a.\"typeguid\" and b.\"name\" = @bname", sql);
+
+            query = select.AsTable((_, old) => old).AsTable((_, old) => old);
+            sql = query.ToSql().Replace("\r\n", "");
+            Assert.Equal("SELECT  * from (SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a) ftb UNION ALLSELECT  * from (SELECT a.\"id\", a.\"clicks\", a.\"typeguid\", a.\"title\", a.\"createtime\" FROM \"tb_topic\" a) ftb", sql);
+            query.ToList();
+
+            query = select.AsTable((_, old) => old).AsTable((_, old) => old);
+            sql = query.ToSql("count(1) as1").Replace("\r\n", "");
+            Assert.Equal("SELECT  * from (SELECT count(1) as1 FROM \"tb_topic\" a) ftb UNION ALLSELECT  * from (SELECT count(1) as1 FROM \"tb_topic\" a) ftb", sql);
+            query.Count();
+
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Max(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Min(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Sum(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Avg(a => a.Id);
+
+            var sqlsss = select
+                .AsTable((type, old) => type == typeof(Topic) ? $"{old}_1" : null)
+                .AsTable((type, old) => type == typeof(Topic) ? $"{old}_2" : null)
+                .ToSql(a => new
+                {
+                    a.Id,
+                    a.Clicks
+                }, FieldAliasOptions.AsProperty);
+
+            var slsld3 = select
+                .AsTable((type, old) => type == typeof(Topic) ? $"({sqlsss})" : null)
+                .Page(1, 20)
+                .ToList(a => new
+                {
+                    a.Id,
+                    a.Clicks
+                });
         }
 
         public class TestInclude_OneToManyModel1
@@ -1048,6 +1118,40 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
                     then => then.IncludeMany(m3 => m3.childs2.Take(2).Where(m4 => m4.model3333Id333 == m3.id)))
                 .Where(a => a.id <= model1.id)
                 .ToList();
+
+            //---- Select ----
+
+            var at0 = g.pgsql.Select<TestInclude_OneToManyModel2>()
+                .IncludeMany(a => a.childs.Where(m3 => m3.model2111Idaaa == a.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.model2id <= model1.id)
+                .ToList();
+
+            var at1 = g.pgsql.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.id <= model1.id)
+                .ToList();
+
+            var at2 = g.pgsql.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }),
+                    then => then.IncludeMany(m3 => m3.childs2.Where(m4 => m4.model3333Id333 == m3.id).Select(m4 => new TestInclude_OneToManyModel4 { id = m4.id })))
+                .Where(a => a.id <= model1.id)
+                .ToList();
+
+            var at00 = g.pgsql.Select<TestInclude_OneToManyModel2>()
+                .IncludeMany(a => a.childs.Take(1).Where(m3 => m3.model2111Idaaa == a.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.model2id <= model1.id)
+                .ToList();
+
+            var at11 = g.pgsql.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.id <= model1.id)
+                .ToList();
+
+            var at22 = g.pgsql.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }),
+                    then => then.IncludeMany(m3 => m3.childs2.Take(2).Where(m4 => m4.model3333Id333 == m3.id).Select(m4 => new TestInclude_OneToManyModel4 { id = m4.id })))
+                .Where(a => a.id <= model1.id)
+                .ToList();
         }
 
         public class TestInclude_OneToManyModel11
@@ -1065,6 +1169,8 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             [Column(IsIdentity = true)]
             public int id { get; set; }
             public string m2setting { get; set; }
+            public string aaa { get; set; }
+            public string bbb { get; set; }
             public List<TestInclude_OneToManyModel33> childs { get; set; }
         }
         public class TestInclude_OneToManyModel33
@@ -1079,7 +1185,7 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
         public void Include_OneToMany2()
         {
             string setting = "x";
-            var model2 = new TestInclude_OneToManyModel22 { m2setting = DateTime.Now.Second.ToString() };
+            var model2 = new TestInclude_OneToManyModel22 { m2setting = DateTime.Now.Second.ToString(), aaa = "aaa" + DateTime.Now.Second, bbb = "bbb" + DateTime.Now.Second };
             model2.id = (int)g.pgsql.Insert(model2).ExecuteIdentity();
 
             var model3s = new[]
@@ -1102,6 +1208,20 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var t11 = g.pgsql.Select<TestInclude_OneToManyModel11>()
                 .LeftJoin(a => a.model2id == a.model2.id)
                 .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2Id == a.model2.id && m3.setting == a.m3setting))
+                .Where(a => a.id <= model1.id)
+                .ToList(true);
+
+            //---- Select ----
+
+            var at1 = g.pgsql.Select<TestInclude_OneToManyModel11>()
+                .LeftJoin(a => a.model2id == a.model2.id)
+                .IncludeMany(a => a.model2.childs.Where(m3 => m3.model2Id == a.model2.id && m3.setting == a.m3setting).Select(m3 => new TestInclude_OneToManyModel33 { title = m3.title }))
+                .Where(a => a.id <= model1.id)
+                .ToList(true);
+
+            var at11 = g.pgsql.Select<TestInclude_OneToManyModel11>()
+                .LeftJoin(a => a.model2id == a.model2.id)
+                .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2Id == a.model2.id && m3.setting == a.m3setting).Select(m3 => new TestInclude_OneToManyModel33 { title = m3.title }))
                 .Where(a => a.id <= model1.id)
                 .ToList(true);
         }
@@ -1199,6 +1319,59 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
                     then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Take(1)).IncludeMany(a => a.Tags.Take(1)))
                 .Include(a => a.Parent)
                 .IncludeMany(a => a.Songs.Take(1))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            // --- Select ---
+
+            var atags0 = g.pgsql.Select<Tag>()
+                .Include(a => a.Parent)
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags1 = g.pgsql.Select<Tag>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags2 = g.pgsql.Select<Tag>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags3 = g.pgsql.Select<Tag>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title })).IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name })))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags11 = g.pgsql.Select<Tag>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags22 = g.pgsql.Select<Tag>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags33 = g.pgsql.Select<Tag>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })).IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name })))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
                 .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
                 .ToList();
         }
@@ -1303,6 +1476,61 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             var tags33 = g.pgsql.Select<Song_tag>()
                 .Include(a => a.Tag.Parent)
                 .IncludeMany(a => a.Tag.Songs.Take(1))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToList(true);
+
+            // --- Select ---
+
+            new List<Song>(new[] { song1, song2, song3 }).IncludeMany(g.pgsql, a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }));
+
+            var asongs1 = g.pgsql.Select<Song>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs1.Count);
+            Assert.Equal(2, songs1[0].Tags.Count);
+            Assert.Equal(1, songs1[1].Tags.Count);
+            Assert.Equal(3, songs1[2].Tags.Count);
+
+            var asongs2 = g.pgsql.Select<Song>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.IncludeMany(t => t.Songs.Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs2.Count);
+            Assert.Equal(2, songs2[0].Tags.Count);
+            Assert.Equal(1, songs2[1].Tags.Count);
+            Assert.Equal(3, songs2[2].Tags.Count);
+
+            var atags3 = g.pgsql.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToList(true);
+
+
+            var asongs11 = g.pgsql.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs11.Count);
+            Assert.Equal(1, songs11[0].Tags.Count);
+            Assert.Equal(1, songs11[1].Tags.Count);
+            Assert.Equal(1, songs11[2].Tags.Count);
+
+            var asongs22 = g.pgsql.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.IncludeMany(t => t.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs22.Count);
+            Assert.Equal(1, songs22[0].Tags.Count);
+            Assert.Equal(1, songs22[1].Tags.Count);
+            Assert.Equal(1, songs22[2].Tags.Count);
+
+            var atags33 = g.pgsql.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
                 .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
                 .ToList(true);
         }
@@ -1439,6 +1667,26 @@ namespace FreeSql.Tests.Odbc.PostgreSQL
             Assert.Equal(2, g.pgsql.Select<ToUpd3Pk>().Where(a => a.name.StartsWith("name")).ToUpdate().Set(a => a.name, "nick?").ExecuteAffrows());
             Assert.Equal(5, g.pgsql.Select<ToUpd3Pk>().Count());
             Assert.Equal(5, g.pgsql.Select<ToUpd3Pk>().Where(a => a.name.StartsWith("nick")).Count());
+        }
+
+        [Fact]
+        public void ForUpdate()
+        {
+            var orm = g.pgsql;
+
+            Assert.Equal("安全起见，请务必在事务开启之后，再使用 ForUpdate",
+                Assert.Throws<Exception>(() => orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToList())?.Message);
+
+            orm.Transaction(() =>
+            {
+                var sql = orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToSql().Replace("\r\n", "");
+                Assert.Equal("SELECT a.\"id\", a.\"name\" FROM \"toupd1pk\" a limit 1 for update", sql);
+                orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToList();
+
+                sql = orm.Select<ToUpd1Pk>().ForUpdate(true).Limit(1).ToSql().Replace("\r\n", "");
+                Assert.Equal("SELECT a.\"id\", a.\"name\" FROM \"toupd1pk\" a limit 1 for update nowait", sql);
+                orm.Select<ToUpd1Pk>().ForUpdate(true).Limit(1).ToList();
+            });
         }
     }
 }

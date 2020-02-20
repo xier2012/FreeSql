@@ -1,4 +1,6 @@
-﻿using FreeSql;
+﻿#if netcore
+
+using FreeSql;
 using FreeSql.DataAnnotations;
 using System;
 using System.Collections.Generic;
@@ -114,8 +116,8 @@ namespace FreeSql
                 (item as BaseEntity).IsDeleted = false;
             return func(repo, childs);
         }
-        public override bool Delete() => UpdateIsDelete(true, (repo, chis) => repo.Update(chis)) > 0;
-        async public override Task<bool> DeleteAsync() => await UpdateIsDelete(true, (repo, chis) => repo.UpdateAsync(chis)) > 0;
+        public override bool Delete(bool physicalDelete = false) => UpdateIsDelete(true, (repo, chis) => repo.Update(chis)) > 0;
+        async public override Task<bool> DeleteAsync(bool physicalDelete = false) => await UpdateIsDelete(true, (repo, chis) => repo.UpdateAsync(chis)) > 0;
 
         public override bool Restore() => UpdateIsDelete(false, (repo, chis) => repo.Update(chis)) > 0;
         async public override Task<bool> RestoreAsync() => await UpdateIsDelete(false, (repo, chis) => repo.UpdateAsync(chis)) > 0;
@@ -162,3 +164,5 @@ namespace FreeSql
         }
     }
 }
+
+#endif

@@ -20,7 +20,7 @@ namespace FreeSql
             return _db.ExecCommandAsync();
         }
 
-        async Task<int> DbContextBetchAddAsync(EntityState[] adds)
+        async Task<int> DbContextBatchAddAsync(EntityState[] adds)
         {
             if (adds.Any() == false) return 0;
             var affrows = await this.OrmInsert(adds.Select(a => a.Value)).ExecuteAffrowsAsync();
@@ -132,44 +132,60 @@ namespace FreeSql
                         await AddOrUpdateNavigateListAsync(item, true);
             }
         }
-        async Task AddOrUpdateNavigateListAsync(TEntity item, bool isAdd)
-        {
-            Type itemType = null;
-            foreach (var prop in _table.Properties)
-            {
-                if (_table.ColumnsByCsIgnore.ContainsKey(prop.Key)) continue;
-                if (_table.ColumnsByCs.ContainsKey(prop.Key)) continue;
 
-                var tref = _table.GetTableRef(prop.Key, true);
-                if (tref == null) continue;
+        async public Task SaveManyAsync(TEntity item, string propertyName)
+        {
+            if (item == null) return;
+            if (string.IsNullOrEmpty(propertyName)) return;
+            if (_table.Properties.TryGetValue(propertyName, out var prop) == false) throw new KeyNotFoundException($"{_table.Type.FullName} 不存在属性 {propertyName}");
+            if (_table.ColumnsByCsIgnore.ContainsKey(propertyName)) throw new ArgumentException($"{_table.Type.FullName} 类型已设置属性 {propertyName} 忽略特性");
+
+            var tref = _table.GetTableRef(propertyName, true);
+            if (tref == null) return;
+            switch (tref.RefType)
+            {
+                case Internal.Model.TableRefType.OneToOne:
+                case Internal.Model.TableRefType.ManyToOne:
+                    throw new ArgumentException($"{_table.Type.FullName} 类型的属性 {propertyName} 不是 OneToMany 或 ManyToMany 特性");
+            }
+
+            await DbContextExecCommandAsync();
+            var oldEnable = _db.Options.EnableAddOrUpdateNavigateList;
+            _db.Options.EnableAddOrUpdateNavigateList = false;
+            try
+            {
+                await AddOrUpdateNavigateListAsync(item, false, propertyName);
+                if (tref.RefType == Internal.Model.TableRefType.OneToMany)
+                {
+                    await DbContextExecCommandAsync();
+                    //删除没有保存的数据
+                    var propValEach = GetItemValue(item, prop) as IEnumerable;
+                    await _db.Orm.Delete<object>().AsType(tref.RefEntityType).WhereDynamic(propValEach, true).ExecuteAffrowsAsync();
+                }
+            }
+            finally
+            {
+                _db.Options.EnableAddOrUpdateNavigateList = oldEnable;
+            }
+        }
+        async Task AddOrUpdateNavigateListAsync(TEntity item, bool isAdd, string propertyName = null)
+        {
+            Func<PropertyInfo, Task> action = async prop =>
+            {
+                if (_table.ColumnsByCsIgnore.ContainsKey(prop.Name)) return;
+                if (_table.ColumnsByCs.ContainsKey(prop.Name)) return;
+
+                var tref = _table.GetTableRef(prop.Name, true);
+                if (tref == null) return;
                 switch (tref.RefType)
                 {
                     case Internal.Model.TableRefType.OneToOne:
                     case Internal.Model.TableRefType.ManyToOne:
-                        continue;
+                        return;
                 }
 
-                object propVal = null;
-                if (itemType == null) itemType = item.GetType();
-                if (_table.TypeLazy != null && itemType == _table.TypeLazy)
-                {
-                    var lazyField = _dicLazyIsSetField.GetOrAdd(_table.TypeLazy, tl => new ConcurrentDictionary<string, FieldInfo>()).GetOrAdd(prop.Key, propName =>
-                        _table.TypeLazy.GetField($"__lazy__{propName}", BindingFlags.GetField | BindingFlags.NonPublic | BindingFlags.Instance));
-                    if (lazyField != null)
-                    {
-                        var lazyFieldValue = (bool)lazyField.GetValue(item);
-                        if (lazyFieldValue == false) continue;
-                    }
-                    propVal = prop.Value.GetValue(item);
-                }
-                else
-                {
-                    propVal = prop.Value.GetValue(item);
-                    if (propVal == null) continue;
-                }
-
-                var propValEach = propVal as IEnumerable;
-                if (propValEach == null) continue;
+                var propValEach = GetItemValue(item, prop) as IEnumerable;
+                if (propValEach == null) return;
                 DbSet<object> refSet = GetDbSetObject(tref.RefEntityType);
                 switch (tref.RefType)
                 {
@@ -239,8 +255,8 @@ namespace FreeSql
                                         curContains.Add(curIdx);
                                 }
                                 if (curContains.Any())
-                                    foreach (var curIdx in curContains)
-                                        curList.RemoveAt(curIdx);
+                                    for (var delIdx = curContains.Count - 1; delIdx >= 0; delIdx--)
+                                        curList.RemoveAt(curContains[delIdx]);
                                 else
                                     midListDel.Add(midItem);
                             }
@@ -255,7 +271,7 @@ namespace FreeSql
                                 }
                                 for (var midcolidx = tref.Columns.Count; midcolidx < tref.MiddleColumns.Count; midcolidx++)
                                 {
-                                    var refcol = tref.Columns[midcolidx - tref.Columns.Count];
+                                    var refcol = tref.RefColumns[midcolidx - tref.Columns.Count];
                                     var refval = FreeSql.Internal.Utils.GetDataReaderValue(tref.MiddleColumns[midcolidx].CsType, _db.Orm.GetEntityValueWithPropertyName(tref.RefEntityType, curItem, refcol.CsName));
                                     _db.Orm.SetEntityValueWithPropertyName(tref.RefMiddleEntityType, newItem, tref.MiddleColumns[midcolidx].CsName, refval);
                                 }
@@ -276,14 +292,20 @@ namespace FreeSql
                         }
                         break;
                 }
-            }
+            };
+
+            if (string.IsNullOrEmpty(propertyName))
+                foreach (var prop in _table.Properties)
+                    await action(prop.Value);
+            else if (_table.Properties.TryGetValue(propertyName, out var prop))
+                await action(prop);
         }
         #endregion
 
         #region UpdateAsync
-        Task<int> DbContextBetchUpdateAsync(EntityState[] ups) => DbContextBetchUpdatePrivAsync(ups, false);
-        Task<int> DbContextBetchUpdateNowAsync(EntityState[] ups) => DbContextBetchUpdatePrivAsync(ups, true);
-        async Task<int> DbContextBetchUpdatePrivAsync(EntityState[] ups, bool isLiveUpdate)
+        Task<int> DbContextBatchUpdateAsync(EntityState[] ups) => DbContextBatchUpdatePrivAsync(ups, false);
+        Task<int> DbContextBatchUpdateNowAsync(EntityState[] ups) => DbContextBatchUpdatePrivAsync(ups, true);
+        async Task<int> DbContextBatchUpdatePrivAsync(EntityState[] ups, bool isLiveUpdate)
         {
             if (ups.Any() == false) return 0;
             var uplst1 = ups[ups.Length - 1];
@@ -370,7 +392,7 @@ namespace FreeSql
         #endregion
 
         #region RemoveAsync
-        async Task<int> DbContextBetchRemoveAsync(EntityState[] dels)
+        async Task<int> DbContextBatchRemoveAsync(EntityState[] dels)
         {
             if (dels.Any() == false) return 0;
             var affrows = await this.OrmDelete(dels.Select(a => a.Value)).ExecuteAffrowsAsync();

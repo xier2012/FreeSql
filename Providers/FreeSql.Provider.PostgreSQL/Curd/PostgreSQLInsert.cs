@@ -1,7 +1,9 @@
 ﻿using FreeSql.Internal;
+using FreeSql.Internal.Model;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -16,9 +18,20 @@ namespace FreeSql.PostgreSQL.Curd
         {
         }
 
-        public override int ExecuteAffrows() => base.SplitExecuteAffrows(5000, 3000);
-        public override long ExecuteIdentity() => base.SplitExecuteIdentity(5000, 3000);
-        public override List<T1> ExecuteInserted() => base.SplitExecuteInserted(5000, 3000);
+        internal IFreeSql InternalOrm => _orm;
+        internal TableInfo InternalTable => _table;
+        internal DbParameter[] InternalParams => _params;
+        internal DbConnection InternalConnection => _connection;
+        internal DbTransaction InternalTransaction => _transaction;
+        internal CommonUtils InternalCommonUtils => _commonUtils;
+        internal CommonExpression InternalCommonExpression => _commonExpression;
+        internal List<T1> InternalSource => _source;
+        internal Dictionary<string, bool> InternalIgnore => _ignore;
+        internal void InternalClearData() => ClearData();
+
+        public override int ExecuteAffrows() => base.SplitExecuteAffrows(_batchValuesLimit > 0 ? _batchValuesLimit : 5000, _batchParameterLimit > 0 ? _batchParameterLimit : 3000);
+        public override long ExecuteIdentity() => base.SplitExecuteIdentity(_batchValuesLimit > 0 ? _batchValuesLimit : 5000, _batchParameterLimit > 0 ? _batchParameterLimit : 3000);
+        public override List<T1> ExecuteInserted() => base.SplitExecuteInserted(_batchValuesLimit > 0 ? _batchValuesLimit : 5000, _batchParameterLimit > 0 ? _batchParameterLimit : 3000);
 
         protected override long RawExecuteIdentity()
         {
@@ -82,7 +95,7 @@ namespace FreeSql.PostgreSQL.Curd
             foreach (var col in _table.Columns.Values)
             {
                 if (colidx > 0) sb.Append(", ");
-                sb.Append(_commonUtils.QuoteReadColumn(col.Attribute.MapType, _commonUtils.QuoteSqlName(col.Attribute.Name))).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
+                sb.Append(_commonUtils.QuoteReadColumn(col.CsType, col.Attribute.MapType, _commonUtils.QuoteSqlName(col.Attribute.Name))).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
                 ++colidx;
             }
             sql = sb.ToString();
@@ -174,7 +187,7 @@ namespace FreeSql.PostgreSQL.Curd
             foreach (var col in _table.Columns.Values)
             {
                 if (colidx > 0) sb.Append(", ");
-                sb.Append(_commonUtils.QuoteReadColumn(col.Attribute.MapType, _commonUtils.QuoteSqlName(col.Attribute.Name))).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
+                sb.Append(_commonUtils.QuoteReadColumn(col.CsType, col.Attribute.MapType, _commonUtils.QuoteSqlName(col.Attribute.Name))).Append(" as ").Append(_commonUtils.QuoteSqlName(col.CsName));
                 ++colidx;
             }
             sql = sb.ToString();

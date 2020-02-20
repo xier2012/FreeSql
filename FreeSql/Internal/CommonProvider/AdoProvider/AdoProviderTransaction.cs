@@ -1,6 +1,8 @@
 ﻿using SafeObjectPool;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
@@ -27,12 +29,12 @@ namespace FreeSql.Internal.CommonProvider
             }
         }
 
-        private Dictionary<int, Transaction2> _trans = new Dictionary<int, Transaction2>();
+        private ConcurrentDictionary<int, Transaction2> _trans = new ConcurrentDictionary<int, Transaction2>();
         private object _trans_lock = new object();
 
         public DbTransaction TransactionCurrentThread => _trans.TryGetValue(Thread.CurrentThread.ManagedThreadId, out var conn) && conn.Transaction?.Connection != null ? conn.Transaction : null;
 
-        public void BeginTransaction(TimeSpan timeout)
+        public void BeginTransaction(TimeSpan timeout, IsolationLevel? isolationLevel)
         {
             if (TransactionCurrentThread != null) return;
 
@@ -43,7 +45,7 @@ namespace FreeSql.Internal.CommonProvider
             try
             {
                 conn = MasterPool.Get();
-                tran = new Transaction2(conn, conn.Value.BeginTransaction(), timeout);
+                tran = new Transaction2(conn, isolationLevel == null ? conn.Value.BeginTransaction() : conn.Value.BeginTransaction(isolationLevel.Value), timeout);
             }
             catch (Exception ex)
             {
@@ -54,7 +56,7 @@ namespace FreeSql.Internal.CommonProvider
             if (_trans.ContainsKey(tid)) CommitTransaction();
 
             lock (_trans_lock)
-                _trans.Add(tid, tran);
+                _trans.TryAdd(tid, tran);
         }
 
         private void AutoCommitTransaction()
@@ -74,7 +76,7 @@ namespace FreeSql.Internal.CommonProvider
             if (_trans.ContainsKey(tran.Conn.LastGetThreadId))
                 lock (_trans_lock)
                     if (_trans.ContainsKey(tran.Conn.LastGetThreadId))
-                        _trans.Remove(tran.Conn.LastGetThreadId);
+                        _trans.TryRemove(tran.Conn.LastGetThreadId, out var oldtran);
 
             Exception ex = null;
             var f001 = isCommit ? "提交" : "回滚";
@@ -101,15 +103,15 @@ namespace FreeSql.Internal.CommonProvider
         public void CommitTransaction() => CommitTransaction(true);
         public void RollbackTransaction() => CommitTransaction(false);
 
-        public void Transaction(Action handler)
-        {
-            Transaction(handler, TimeSpan.FromSeconds(60));
-        }
-        public void Transaction(Action handler, TimeSpan timeout)
+        public void Transaction(Action handler) => TransactionInternal(null, TimeSpan.FromSeconds(60), handler);
+        public void Transaction(TimeSpan timeout, Action handler) => TransactionInternal(null, timeout, handler);
+        public void Transaction(IsolationLevel isolationLevel, TimeSpan timeout, Action handler) => TransactionInternal(isolationLevel, timeout, handler);
+
+        void TransactionInternal(IsolationLevel? isolationLevel, TimeSpan timeout, Action handler)
         {
             try
             {
-                BeginTransaction(timeout);
+                BeginTransaction(timeout, isolationLevel);
                 handler();
                 CommitTransaction();
             }
@@ -120,14 +122,11 @@ namespace FreeSql.Internal.CommonProvider
             }
         }
 
-        ~AdoProvider()
-        {
-            this.Dispose();
-        }
-        bool _isdisposed = false;
+        ~AdoProvider() => this.Dispose();
+        int _disposeCounter;
         public void Dispose()
         {
-            if (_isdisposed) return;
+            if (Interlocked.Increment(ref _disposeCounter) != 1) return;
             try
             {
                 Transaction2[] trans = null;
@@ -137,7 +136,7 @@ namespace FreeSql.Internal.CommonProvider
             }
             catch { }
 
-            ObjectPool<DbConnection>[] pools = null;
+            IObjectPool<DbConnection>[] pools = null;
             for (var a = 0; a < 10; a++)
             {
                 try

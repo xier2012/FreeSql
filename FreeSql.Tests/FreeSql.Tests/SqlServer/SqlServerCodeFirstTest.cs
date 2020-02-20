@@ -9,32 +9,23 @@ using Xunit;
 
 namespace FreeSql.Tests.SqlServer
 {
-
-    [Collection("SqlServerCollection")]
     public class SqlServerCodeFirstTest
     {
-
-        SqlServerFixture _sqlserverFixture;
-
-        public SqlServerCodeFirstTest(SqlServerFixture sqlserverFixture)
-        {
-            _sqlserverFixture = sqlserverFixture;
-        }
 
         [Fact]
         public void 中文表_字段()
         {
-            var sql = _sqlserverFixture.SqlServer.CodeFirst.GetComparisonDDLStatements<测试中文表>();
-            _sqlserverFixture.SqlServer.CodeFirst.SyncStructure<测试中文表>();
+            var sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<测试中文表>();
+            g.sqlserver.CodeFirst.SyncStructure<测试中文表>();
 
             var item = new 测试中文表
             {
                 标题 = "测试标题",
                 创建时间 = DateTime.Now
             };
-            Assert.Equal(1, _sqlserverFixture.SqlServer.Insert<测试中文表>().AppendData(item).ExecuteAffrows());
+            Assert.Equal(1, g.sqlserver.Insert<测试中文表>().AppendData(item).ExecuteAffrows());
             Assert.NotEqual(Guid.Empty, item.编号);
-            var item2 = _sqlserverFixture.SqlServer.Select<测试中文表>().Where(a => a.编号 == item.编号).First();
+            var item2 = g.sqlserver.Select<测试中文表>().Where(a => a.编号 == item.编号).First();
             Assert.NotNull(item2);
             Assert.Equal(item.编号, item2.编号);
             Assert.Equal(item.标题, item2.标题);
@@ -46,15 +37,19 @@ namespace FreeSql.Tests.SqlServer
 
             public string 标题 { get; set; }
 
+            [Column(ServerTime = DateTimeKind.Local, CanUpdate = false)]
             public DateTime 创建时间 { get; set; }
+
+            [Column(ServerTime = DateTimeKind.Local)]
+            public DateTime 更新时间 { get; set; }
         }
 
 
         [Fact]
         public void AddUniques()
         {
-            var sql = _sqlserverFixture.SqlServer.CodeFirst.GetComparisonDDLStatements<AddUniquesInfo>();
-            _sqlserverFixture.SqlServer.CodeFirst.SyncStructure<AddUniquesInfo>();
+            var sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<AddUniquesInfo>();
+            g.sqlserver.CodeFirst.SyncStructure<AddUniquesInfo>();
         }
         [Table(Name = "AddUniquesInfo", OldName = "AddUniquesInfo2")]
         [Index("uk_phone", "phone", true)]
@@ -73,9 +68,9 @@ namespace FreeSql.Tests.SqlServer
         [Fact]
         public void AddField()
         {
-            var sql = _sqlserverFixture.SqlServer.CodeFirst.GetComparisonDDLStatements<TopicAddField>();
+            var sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<TopicAddField>();
 
-            var id = _sqlserverFixture.SqlServer.Insert<TopicAddField>().AppendData(new TopicAddField { }).ExecuteIdentity();
+            var id = g.sqlserver.Insert<TopicAddField>().AppendData(new TopicAddField { }).ExecuteIdentity();
         }
 
         [Table(Name = "dbo2.TopicAddField", OldName = "tedb1.dbo.TopicAddField")]
@@ -103,13 +98,13 @@ namespace FreeSql.Tests.SqlServer
         public void GetComparisonDDLStatements()
         {
 
-            var sql = _sqlserverFixture.SqlServer.CodeFirst.GetComparisonDDLStatements<TableAllType>();
+            var sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<TableAllType>();
 
-            sql = _sqlserverFixture.SqlServer.CodeFirst.GetComparisonDDLStatements<Tb_alltype>();
+            sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<Tb_alltype>();
         }
 
-        IInsert<TableAllType> insert => _sqlserverFixture.SqlServer.Insert<TableAllType>();
-        ISelect<TableAllType> select => _sqlserverFixture.SqlServer.Select<TableAllType>();
+        IInsert<TableAllType> insert => g.sqlserver.Insert<TableAllType>();
+        ISelect<TableAllType> select => g.sqlserver.Select<TableAllType>();
 
         [Fact]
         public void CurdAllField()
@@ -168,7 +163,7 @@ namespace FreeSql.Tests.SqlServer
             var sqlTestUpdate = g.sqlserver.Update<TableAllType>().SetSource(item3NP).NoneParameter().ToSql();
 
             var item3 = insert.AppendData(item2).ExecuteInserted();
-            var newitem2 = select.Where(a => a.Id == item2.Id).ToOne();
+            var newitem2 = select.Where(a => a.Id == item3NP[0].Id).ToOne();
 
             var items = select.ToList();
         }
@@ -353,8 +348,12 @@ namespace FreeSql.Tests.SqlServer
             public float testFieldFloat { get; set; }
             public decimal testFieldDecimal { get; set; }
             public TimeSpan testFieldTimeSpan { get; set; }
+
+            [Column(ServerTime = DateTimeKind.Local)]
             public DateTime testFieldDateTime { get; set; }
+            [Column(ServerTime = DateTimeKind.Local)]
             public DateTimeOffset testFieldDateTimeOffset { get; set; }
+
             public byte[] testFieldBytes { get; set; }
             public string testFieldString { get; set; }
             public Guid testFieldGuid { get; set; }
@@ -372,8 +371,12 @@ namespace FreeSql.Tests.SqlServer
             public float? testFieldFloatNullable { get; set; }
             public decimal? testFieldDecimalNullable { get; set; }
             public TimeSpan? testFieldTimeSpanNullable { get; set; }
+
+            [Column(ServerTime = DateTimeKind.Local)]
             public DateTime? testFieldDateTimeNullable { get; set; }
+            [Column(ServerTime = DateTimeKind.Local)]
             public DateTimeOffset? testFieldDateTimeNullableOffset { get; set; }
+
             public Guid? testFieldGuidNullable { get; set; }
 
             public TableAllTypeEnumType1 testFieldEnum1 { get; set; }

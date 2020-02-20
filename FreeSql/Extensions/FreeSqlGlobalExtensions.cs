@@ -1,5 +1,7 @@
 ﻿using FreeSql;
+using FreeSql.DataAnnotations;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -8,6 +10,8 @@ using System.Drawing;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
+using System.Threading;
 
 public static partial class FreeSqlGlobalExtensions
 {
@@ -38,10 +42,48 @@ public static partial class FreeSqlGlobalExtensions
     });
     public static bool IsIntegerType(this Type that) => that == null ? false : (dicIsNumberType.Value.TryGetValue(that, out var tryval) ? tryval : false);
     public static bool IsNumberType(this Type that) => that == null ? false : dicIsNumberType.Value.ContainsKey(that);
-    public static bool IsNullableType(this Type that) => that?.FullName.StartsWith("System.Nullable`1[") == true;
+    public static bool IsNullableType(this Type that) => that.IsArray == false && that?.FullName.StartsWith("System.Nullable`1[") == true;
     public static bool IsAnonymousType(this Type that) => that?.FullName.StartsWith("<>f__AnonymousType") == true;
+    public static bool IsArrayOrList(this Type that) => that == null ? false : (that.IsArray || typeof(IList).IsAssignableFrom(that));
     public static Type NullableTypeOrThis(this Type that) => that?.IsNullableType() == true ? that.GetGenericArguments().First() : that;
     internal static string NotNullAndConcat(this string that, params object[] args) => string.IsNullOrEmpty(that) ? null : string.Concat(new object[] { that }.Concat(args));
+    public static object CreateInstanceGetDefaultValue(this Type that)
+    {
+        if (that == null) return null;
+        if (that == typeof(string)) return default(string);
+        if (that.IsArray) return Array.CreateInstance(that, 0);
+        var ctorParms = that.InternalGetTypeConstructor0OrFirst(false)?.GetParameters();
+        if (ctorParms == null || ctorParms.Any() == false) return Activator.CreateInstance(that, null);
+        return Activator.CreateInstance(that, ctorParms.Select(a => Activator.CreateInstance(a.ParameterType, null)).ToArray());
+    }
+    internal static NewExpression InternalNewExpression(this Type that)
+    {
+        var ctor = that.InternalGetTypeConstructor0OrFirst();
+        return Expression.New(ctor, ctor.GetParameters().Select(a => Expression.Constant(a.ParameterType.CreateInstanceGetDefaultValue(), a.ParameterType)));
+    }
+
+    static ConcurrentDictionary<Type, ConstructorInfo> _dicInternalGetTypeConstructor0OrFirst = new ConcurrentDictionary<Type, ConstructorInfo>();
+    internal static ConstructorInfo InternalGetTypeConstructor0OrFirst(this Type that, bool isThrow = true)
+    {
+        var ret = _dicInternalGetTypeConstructor0OrFirst.GetOrAdd(that, tp =>
+            tp.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[0], null) ??
+            tp.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).FirstOrDefault());
+        if (ret == null && isThrow) throw new ArgumentException($"{that.FullName} 类型无方法访问构造函数");
+        return ret;
+    }
+
+    static ConcurrentDictionary<Type, Dictionary<string, PropertyInfo>> _dicGetPropertiesDictIgnoreCase = new ConcurrentDictionary<Type, Dictionary<string, PropertyInfo>>();
+    public static Dictionary<string, PropertyInfo> GetPropertiesDictIgnoreCase(this Type that) => that == null ? null : _dicGetPropertiesDictIgnoreCase.GetOrAdd(that, tp =>
+    {
+        var props = that.GetProperties().GroupBy(p => p.DeclaringType).Reverse().SelectMany(p => p); //将基类的属性位置放在前面 #164
+        var dict = new Dictionary<string, PropertyInfo>(StringComparer.CurrentCultureIgnoreCase);
+        foreach (var prop in props)
+        {
+            if (dict.ContainsKey(prop.Name)) continue;
+            dict.Add(prop.Name, prop);
+        }
+        return dict;
+    });
 
     /// <summary>
     /// 测量两个经纬度的距离，返回单位：米
@@ -77,10 +119,7 @@ public static partial class FreeSqlGlobalExtensions
         var desc = item.GetType().GetField(name)?.GetCustomAttributes(typeof(DescriptionAttribute), false)?.FirstOrDefault() as DescriptionAttribute;
         return desc?.Description ?? name;
     }
-    public static long ToInt64(this Enum item)
-    {
-        return Convert.ToInt64(item);
-    }
+    public static long ToInt64(this Enum item) => Convert.ToInt64(item);
     public static IEnumerable<T> ToSet<T>(this long value)
     {
         var ret = new List<T>();
@@ -103,16 +142,9 @@ public static partial class FreeSqlGlobalExtensions
     /// <typeparam name="TEntity"></typeparam>
     /// <param name="that"></param>
     /// <returns></returns>
-    public static ISelect<TEntity> AsSelect<TEntity>(this IEnumerable<TEntity> that) where TEntity : class
-    {
-        throw new NotImplementedException();
-    }
-    public static ISelect<TEntity> AsSelect<TEntity>(this IEnumerable<TEntity> that, IFreeSql orm = null) where TEntity : class
-    {
-        return orm?.Select<TEntity>();
-    }
-
-    public static FreeSql.ISelect<T> Queryable<T>(this IFreeSql freesql) where T : class => freesql.Select<T>();
+    public static ISelect<TEntity> AsSelect<TEntity>(this IEnumerable<TEntity> that) where TEntity : class => throw new NotImplementedException();
+    public static ISelect<TEntity> AsSelect<TEntity>(this IEnumerable<TEntity> that, IFreeSql orm = null) where TEntity : class => orm?.Select<TEntity>();
+    public static ISelect<T> Queryable<T>(this IFreeSql freesql) where T : class => freesql.Select<T>();
 
     #region 多表查询
     /// <summary>
@@ -177,11 +209,12 @@ public static partial class FreeSqlGlobalExtensions
     /// 示例：new List&lt;Song&gt;(new[] { song1, song2, song3 }).IncludeMany(g.sqlite, a => a.Tags);<para></para>
     /// 文档：https://github.com/2881099/FreeSql/wiki/%e8%b4%aa%e5%a9%aa%e5%8a%a0%e8%bd%bd#%E5%AF%BC%E8%88%AA%E5%B1%9E%E6%80%A7-onetomanymanytomany
     /// </summary>
-    /// <typeparam name="T1"></typeparam>
     /// <typeparam name="TNavigate"></typeparam>
-    /// <param name="list"></param>
-    /// <param name="orm"></param>
-    /// <param name="navigateSelector">选择一个集合的导航属性，也可通过 .Where 设置临时的关系映射，还可以 .Take(5) 每个子集合只取5条</param>
+    /// <param name="navigateSelector">选择一个集合的导航属性，如： .IncludeMany(a => a.Tags)<para></para>
+    /// 可以 .Where 设置临时的关系映射，如： .IncludeMany(a => a.Tags.Where(tag => tag.TypeId == a.Id))<para></para>
+    /// 可以 .Take(5) 每个子集合只取5条，如： .IncludeMany(a => a.Tags.Take(5))<para></para>
+    /// 可以 .Select 设置只查询部分字段，如： (a => new TNavigate { Title = a.Title }) 
+    /// </param>
     /// <param name="then">即能 ThenInclude，还可以二次过滤（这个 EFCore 做不到？）</param>
     /// <returns></returns>
     public static List<T1> IncludeMany<T1, TNavigate>(this List<T1> list, IFreeSql orm, Expression<Func<T1, IEnumerable<TNavigate>>> navigateSelector, Action<ISelect<TNavigate>> then = null) where T1 : class where TNavigate : class
@@ -191,5 +224,16 @@ public static partial class FreeSqlGlobalExtensions
         select.SetList(list);
         return list;
     }
+
+#if net40
+#else
+    async public static System.Threading.Tasks.Task<List<T1>> IncludeManyAsync<T1, TNavigate>(this List<T1> list, IFreeSql orm, Expression<Func<T1, IEnumerable<TNavigate>>> navigateSelector, Action<ISelect<TNavigate>> then = null) where T1 : class where TNavigate : class
+    {
+        if (list == null || list.Any() == false) return list;
+        var select = orm.Select<T1>().IncludeMany(navigateSelector, then) as FreeSql.Internal.CommonProvider.Select1Provider<T1>;
+        await select.SetListAsync(list);
+        return list;
+    }
+#endif
     #endregion
 }

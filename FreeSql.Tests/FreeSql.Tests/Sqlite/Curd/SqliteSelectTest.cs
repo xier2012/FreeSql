@@ -2,6 +2,8 @@ using FreeSql.DataAnnotations;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace FreeSql.Tests.Sqlite
@@ -144,6 +146,19 @@ namespace FreeSql.Tests.Sqlite
 
             public TestDtoLeftJoin Obj { get; set; }
         }
+        class TestDto2
+        {
+            public int id { get; set; }
+            public string name { get; set; } //这是join表的属性
+            public int ParentId { get; set; } //这是join表的属性
+
+            public TestDto2() { }
+            public TestDto2(int id, string name)
+            {
+                this.id = id;
+                this.name = name;
+            }
+        }
         class TestDtoLeftJoin
         {
             [Column(IsPrimary = true)]
@@ -164,6 +179,7 @@ namespace FreeSql.Tests.Sqlite
                     g.sqlite.Insert<TestDtoLeftJoin>(testdtolj).ExecuteAffrows();
             }
 
+            select.Limit(10).ToList(a => new TestDto { id = a.Id, name = a.Title });
             var testDto1 = select.Limit(10).ToList(a => new TestDto { id = a.Id, name = a.Title });
             var testDto2 = select.Limit(10).ToList(a => new TestDto());
             var testDto3 = select.Limit(10).ToList(a => new TestDto { });
@@ -173,6 +189,18 @@ namespace FreeSql.Tests.Sqlite
             var testDto22 = select.LeftJoin<TestDtoLeftJoin>((a, b) => b.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto());
             var testDto33 = select.LeftJoin<TestDtoLeftJoin>((a, b) => b.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto { });
             var testDto44 = select.LeftJoin<TestDtoLeftJoin>((a, b) => b.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto() { });
+
+            var testDto211 = select.Limit(10).ToList(a => new TestDto2(a.Id, a.Title));
+            var testDto212 = select.Limit(10).ToList(a => new TestDto2());
+            var testDto213 = select.Limit(10).ToList(a => new TestDto2 { });
+            var testDto214 = select.Limit(10).ToList(a => new TestDto2() { });
+            var testDto215 = select.Limit(10).ToList<TestDto2>();
+
+            var testDto2211 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2(a.Id, a.Title));
+            var testDto2222 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2());
+            var testDto2233 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2 { });
+            var testDto2244 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList(a => new TestDto2() { });
+            var testDto2255 = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).Limit(10).ToList<TestDto2>();
 
             g.sqlite.Insert<TestGuidIdToList>().AppendData(new TestGuidIdToList()).ExecuteAffrows();
             var testGuidId5 = g.sqlite.Select<TestGuidIdToList>().ToList();
@@ -598,6 +626,7 @@ namespace FreeSql.Tests.Sqlite
             .OrderByDescending(a => a.Count())
             .Offset(10)
             .Limit(2)
+            .Count(out var trycount)
             .ToList(a => new
             {
                 a.Key.tt2,
@@ -610,6 +639,9 @@ namespace FreeSql.Tests.Sqlite
 
             var testpid1 = g.sqlite.Insert<TestTypeInfo>().AppendData(new TestTypeInfo { Name = "Name" + DateTime.Now.ToString("yyyyMMddHHmmss") }).ExecuteIdentity();
             g.sqlite.Insert<TestInfo>().AppendData(new TestInfo { Title = "Title" + DateTime.Now.ToString("yyyyMMddHHmmss"), CreateTime = DateTime.Now, TypeGuid = (int)testpid1 }).ExecuteAffrows();
+
+            var fkfjfj = select.GroupBy(a => a.Title)
+                .ToList(a => a.Sum(a.Value.TypeGuid));
 
             var aggsql1 = select
                 .GroupBy(a => a.Title)
@@ -708,12 +740,16 @@ namespace FreeSql.Tests.Sqlite
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Sum(b => b.Id)
+                count = (long)select.As("b").Sum(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""Id"" as1, a.""Clicks"" as2, a.""TypeGuid"" as3, a.""Title"" as4, a.""CreateTime"" as5, (SELECT sum(b.""Id"") 
+	FROM ""tb_topic22"" b 
+	limit 0,1) as6 
+FROM ""tb_topic22"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Sum(b => b.Id)
+                count = (long)select.As("b").Sum(b => b.Id)
             });
         }
         [Fact]
@@ -722,12 +758,16 @@ namespace FreeSql.Tests.Sqlite
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Min(b => b.Id)
+                count = select.As("b").Min(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""Id"" as1, a.""Clicks"" as2, a.""TypeGuid"" as3, a.""Title"" as4, a.""CreateTime"" as5, (SELECT min(b.""Id"") 
+	FROM ""tb_topic22"" b 
+	limit 0,1) as6 
+FROM ""tb_topic22"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Min(b => b.Id)
+                count = select.As("b").Min(b => b.Id)
             });
         }
         [Fact]
@@ -736,12 +776,16 @@ namespace FreeSql.Tests.Sqlite
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Max(b => b.Id)
+                count = select.As("b").Max(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""Id"" as1, a.""Clicks"" as2, a.""TypeGuid"" as3, a.""Title"" as4, a.""CreateTime"" as5, (SELECT max(b.""Id"") 
+	FROM ""tb_topic22"" b 
+	limit 0,1) as6 
+FROM ""tb_topic22"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Max(b => b.Id)
+                count = select.As("b").Max(b => b.Id)
             });
         }
         [Fact]
@@ -750,13 +794,27 @@ namespace FreeSql.Tests.Sqlite
             var subquery = select.ToSql(a => new
             {
                 all = a,
-                count = select.Avg(b => b.Id)
+                count = select.As("b").Avg(b => b.Id)
             });
+            Assert.Equal(@"SELECT a.""Id"" as1, a.""Clicks"" as2, a.""TypeGuid"" as3, a.""Title"" as4, a.""CreateTime"" as5, (SELECT avg(b.""Id"") 
+	FROM ""tb_topic22"" b 
+	limit 0,1) as6 
+FROM ""tb_topic22"" a", subquery);
             var subqueryList = select.ToList(a => new
             {
                 all = a,
-                count = select.Avg(b => b.Id)
+                count = select.As("b").Avg(b => b.Id)
             });
+        }
+        [Fact]
+        public void WhereIn()
+        {
+            var subquery = select.Where(a => select.As("b").ToList(b => b.Title).Contains(a.Id.ToString())).ToSql();
+            Assert.Equal(@"SELECT a.""Id"", a.""Clicks"", a.""TypeGuid"", a.""Title"", a.""CreateTime"" 
+FROM ""tb_topic22"" a 
+WHERE (((cast(a.""Id"" as character)) in (SELECT b.""Title"" 
+	FROM ""tb_topic22"" b)))", subquery);
+            var subqueryList = select.Where(a => select.As("b").ToList(b => b.Title).Contains(a.Id.ToString())).ToList();
         }
         [Fact]
         public void As()
@@ -797,9 +855,15 @@ namespace FreeSql.Tests.Sqlite
             };
             var query = select.LeftJoin(a => a.Type.Guid == a.TypeGuid).AsTable(tableRule).AsTable(tableRule2);
             var sql = query.ToSql();
+            var sql2 = query.ToSql("count(1)");
+            var count2 = query.ToList<int>("count(1)");
+
+
 
             query = select.AsTable((type, oldname) => "table_1").AsTable((type, oldname) => "table_2").AsTable((type, oldname) => "table_3");
             sql = query.ToSql(a => a.Id);
+            sql2 = query.ToSql("count(1)");
+            count2 = query.ToList<int>("count(1)");
 
 
             //����е�������a.Type��a.Type.Parent ���ǵ�������
@@ -856,6 +920,39 @@ namespace FreeSql.Tests.Sqlite
             query = select.LeftJoin("\"TestTypeInfo\" b on b.\"Guid\" = a.\"TypeGuid\" and b.\"Name\" = @bname", new { bname = "xxx" }).AsTable(tableRule);
             sql = query.ToSql().Replace("\r\n", "");
             Assert.Equal("SELECT a.\"Id\", a.\"Clicks\", a.\"TypeGuid\", a.\"Title\", a.\"CreateTime\" FROM \"tb_topic22AsTable1\" a LEFT JOIN \"TestTypeInfo\" b on b.\"Guid\" = a.\"TypeGuid\" and b.\"Name\" = @bname", sql);
+
+            query = select.AsTable((_, old) => old).AsTable((_, old) => old);
+            sql = query.ToSql().Replace("\r\n", "");
+            Assert.Equal("SELECT  * from (SELECT a.\"Id\", a.\"Clicks\", a.\"TypeGuid\", a.\"Title\", a.\"CreateTime\" FROM \"tb_topic22\" a) ftb UNION ALLSELECT  * from (SELECT a.\"Id\", a.\"Clicks\", a.\"TypeGuid\", a.\"Title\", a.\"CreateTime\" FROM \"tb_topic22\" a) ftb", sql);
+            query.ToList();
+
+            query = select.AsTable((_, old) => old).AsTable((_, old) => old);
+            sql = query.ToSql("count(1) as1").Replace("\r\n", "");
+            Assert.Equal("SELECT  * from (SELECT count(1) as1 FROM \"tb_topic22\" a) ftb UNION ALLSELECT  * from (SELECT count(1) as1 FROM \"tb_topic22\" a) ftb", sql);
+            query.Count();
+
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Max(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Min(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Sum(a => a.Id);
+            select.AsTable((_, old) => old).AsTable((_, old) => old).Avg(a => a.Id);
+
+            var sqlsss = select
+                .AsTable((type, old) => type == typeof(Topic) ? $"{old}_1" : null)
+                .AsTable((type, old) => type == typeof(Topic) ? $"{old}_2" : null)
+                .ToSql(a => new
+                {
+                    a.Id,
+                    a.Clicks
+                }, FieldAliasOptions.AsProperty);
+
+            var slsld3 = select
+                .AsTable((type, old) => type == typeof(Topic) ? $"({sqlsss})" : null)
+                .Page(1, 20)
+                .ToList(a => new
+                {
+                    a.Id,
+                    a.Clicks
+                });
         }
 
         public class TestInclude_OneToManyModel1
@@ -950,6 +1047,40 @@ namespace FreeSql.Tests.Sqlite
                     then => then.IncludeMany(m3 => m3.childs2.Take(2).Where(m4 => m4.model3333Id333 == m3.id)))
                 .Where(a => a.id <= model1.id)
                 .ToList();
+
+            //---- Select ----
+
+            var at0 = g.sqlite.Select<TestInclude_OneToManyModel2>()
+                .IncludeMany(a => a.childs.Where(m3 => m3.model2111Idaaa == a.model2id).Select(m3 => new TestInclude_OneToManyModel3 {  id = m3.id }))
+                .Where(a => a.model2id <= model1.id)
+                .ToList();
+
+            var at1 = g.sqlite.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.id <= model1.id)
+                .ToList();
+
+            var at2 = g.sqlite.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }),
+                    then => then.IncludeMany(m3 => m3.childs2.Where(m4 => m4.model3333Id333 == m3.id).Select(m4 => new TestInclude_OneToManyModel4 { id = m4.id })))
+                .Where(a => a.id <= model1.id)
+                .ToList();
+
+            var at00 = g.sqlite.Select<TestInclude_OneToManyModel2>()
+                .IncludeMany(a => a.childs.Take(1).Where(m3 => m3.model2111Idaaa == a.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.model2id <= model1.id)
+                .ToList();
+
+            var at11 = g.sqlite.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }))
+                .Where(a => a.id <= model1.id)
+                .ToList();
+
+            var at22 = g.sqlite.Select<TestInclude_OneToManyModel1>()
+                .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2111Idaaa == a.model2.model2id).Select(m3 => new TestInclude_OneToManyModel3 { id = m3.id }),
+                    then => then.IncludeMany(m3 => m3.childs2.Take(2).Where(m4 => m4.model3333Id333 == m3.id).Select(m4 => new TestInclude_OneToManyModel4 { id = m4.id })))
+                .Where(a => a.id <= model1.id)
+                .ToList();
         }
 
         public class TestInclude_OneToManyModel11
@@ -967,6 +1098,8 @@ namespace FreeSql.Tests.Sqlite
             [Column(IsIdentity = true)]
             public int id { get; set; }
             public string m2setting { get; set; }
+            public string aaa { get; set; }
+            public string bbb { get; set; }
             public List<TestInclude_OneToManyModel33> childs { get; set; }
         }
         public class TestInclude_OneToManyModel33
@@ -981,7 +1114,7 @@ namespace FreeSql.Tests.Sqlite
         public void Include_OneToMany2()
         {
             string setting = "x";
-            var model2 = new TestInclude_OneToManyModel22 { m2setting = DateTime.Now.Second.ToString() };
+            var model2 = new TestInclude_OneToManyModel22 { m2setting = DateTime.Now.Second.ToString(), aaa = "aaa" + DateTime.Now.Second, bbb = "bbb" + DateTime.Now.Second };
             model2.id = (int)g.sqlite.Insert(model2).ExecuteIdentity();
 
             var model3s = new[]
@@ -1004,6 +1137,20 @@ namespace FreeSql.Tests.Sqlite
             var t11 = g.sqlite.Select<TestInclude_OneToManyModel11>()
                 .LeftJoin(a => a.model2id == a.model2.id)
                 .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2Id == a.model2.id && m3.setting == a.m3setting))
+                .Where(a => a.id <= model1.id)
+                .ToList(true);
+
+            //---- Select ----
+
+            var at1 = g.sqlite.Select<TestInclude_OneToManyModel11>()
+                .LeftJoin(a => a.model2id == a.model2.id)
+                .IncludeMany(a => a.model2.childs.Where(m3 => m3.model2Id == a.model2.id && m3.setting == a.m3setting).Select(m3 => new TestInclude_OneToManyModel33 { title = m3.title }))
+                .Where(a => a.id <= model1.id)
+                .ToList(true);
+
+            var at11 = g.sqlite.Select<TestInclude_OneToManyModel11>()
+                .LeftJoin(a => a.model2id == a.model2.id)
+                .IncludeMany(a => a.model2.childs.Take(1).Where(m3 => m3.model2Id == a.model2.id && m3.setting == a.m3setting).Select(m3 => new TestInclude_OneToManyModel33 { title = m3.title }))
                 .Where(a => a.id <= model1.id)
                 .ToList(true);
         }
@@ -1101,6 +1248,59 @@ namespace FreeSql.Tests.Sqlite
                     then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Take(1)).IncludeMany(a => a.Tags.Take(1)))
                 .Include(a => a.Parent)
                 .IncludeMany(a => a.Songs.Take(1))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            // --- Select ---
+
+            var atags0 = g.sqlite.Select<Tag>()
+                .Include(a => a.Parent)
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags1 = g.sqlite.Select<Tag>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags2 = g.sqlite.Select<Tag>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags3 = g.sqlite.Select<Tag>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title })).IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name })))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags11 = g.sqlite.Select<Tag>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags22 = g.sqlite.Select<Tag>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
+                .ToList();
+
+            var atags33 = g.sqlite.Select<Tag>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.Include(a => a.Parent).IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })).IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name })))
+                .Include(a => a.Parent)
+                .IncludeMany(a => a.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
                 .Where(a => a.Id == tag1.Id || a.Id == tag2.Id)
                 .ToList();
         }
@@ -1208,6 +1408,224 @@ namespace FreeSql.Tests.Sqlite
                 .IncludeMany(a => a.Tag.Songs.Take(1))
                 .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
                 .ToList(true);
+
+            // --- Select ---
+
+            new List<Song>(new[] { song1, song2, song3 }).IncludeMany(g.sqlite, a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }));
+
+            var asongs1 = g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs1.Count);
+            Assert.Equal(2, songs1[0].Tags.Count);
+            Assert.Equal(1, songs1[1].Tags.Count);
+            Assert.Equal(3, songs1[2].Tags.Count);
+
+            var asongs2 = g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.IncludeMany(t => t.Songs.Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs2.Count);
+            Assert.Equal(2, songs2[0].Tags.Count);
+            Assert.Equal(1, songs2[1].Tags.Count);
+            Assert.Equal(3, songs2[2].Tags.Count);
+
+            var atags3 = g.sqlite.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToList(true);
+
+
+            var asongs11 = g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs11.Count);
+            Assert.Equal(1, songs11[0].Tags.Count);
+            Assert.Equal(1, songs11[1].Tags.Count);
+            Assert.Equal(1, songs11[2].Tags.Count);
+
+            var asongs22 = g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.IncludeMany(t => t.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToList();
+            Assert.Equal(3, songs22.Count);
+            Assert.Equal(1, songs22[0].Tags.Count);
+            Assert.Equal(1, songs22[1].Tags.Count);
+            Assert.Equal(1, songs22[2].Tags.Count);
+
+            var atags33 = g.sqlite.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToList(true);
+        }
+
+        [Fact]
+        async public Task Include_ManyToManyAsync()
+        {
+            ThreadPool.SetMinThreads(100, 100);
+            await Task.Yield();
+
+            var tag1 = new Tag
+            {
+                Ddd = DateTime.Now.Second,
+                Name = "test_manytoMany_01_中国"
+            };
+            tag1.Id = (int)await g.sqlite.Insert(tag1).ExecuteIdentityAsync();
+            var tag2 = new Tag
+            {
+                Ddd = DateTime.Now.Second,
+                Name = "test_manytoMany_02_美国"
+            };
+            tag2.Id = (int)await g.sqlite.Insert(tag2).ExecuteIdentityAsync();
+            var tag3 = new Tag
+            {
+                Ddd = DateTime.Now.Second,
+                Name = "test_manytoMany_03_日本"
+            };
+            tag3.Id = (int)await g.sqlite.Insert(tag3).ExecuteIdentityAsync();
+
+            var song1 = new Song
+            {
+                Create_time = DateTime.Now,
+                Title = "test_manytoMany_01_我是中国人.mp3",
+                Url = "http://ww.baidu.com/"
+            };
+            song1.Id = (int)await g.sqlite.Insert(song1).ExecuteIdentityAsync();
+            var song2 = new Song
+            {
+                Create_time = DateTime.Now,
+                Title = "test_manytoMany_02_爱你一万年.mp3",
+                Url = "http://ww.163.com/"
+            };
+            song2.Id = (int)await g.sqlite.Insert(song2).ExecuteIdentityAsync();
+            var song3 = new Song
+            {
+                Create_time = DateTime.Now,
+                Title = "test_manytoMany_03_千年等一回.mp3",
+                Url = "http://ww.sina.com/"
+            };
+            song3.Id = (int)await g.sqlite.Insert(song3).ExecuteIdentityAsync();
+
+            await g.sqlite.Insert(new Song_tag { Song_id = song1.Id, Tag_id = tag1.Id }).ExecuteAffrowsAsync();
+            await g.sqlite.Insert(new Song_tag { Song_id = song2.Id, Tag_id = tag1.Id }).ExecuteAffrowsAsync();
+            await g.sqlite.Insert(new Song_tag { Song_id = song3.Id, Tag_id = tag1.Id }).ExecuteAffrowsAsync();
+            await g.sqlite.Insert(new Song_tag { Song_id = song1.Id, Tag_id = tag2.Id }).ExecuteAffrowsAsync();
+            await g.sqlite.Insert(new Song_tag { Song_id = song3.Id, Tag_id = tag2.Id }).ExecuteAffrowsAsync();
+            await g.sqlite.Insert(new Song_tag { Song_id = song3.Id, Tag_id = tag3.Id }).ExecuteAffrowsAsync();
+
+            await new List<Song>(new[] { song1, song2, song3 }).IncludeManyAsync(g.sqlite, a => a.Tags);
+
+            var songs1 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags)
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs1.Count);
+            Assert.Equal(2, songs1[0].Tags.Count);
+            Assert.Equal(1, songs1[1].Tags.Count);
+            Assert.Equal(3, songs1[2].Tags.Count);
+
+            var songs2 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags,
+                    then => then.IncludeMany(t => t.Songs))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs2.Count);
+            Assert.Equal(2, songs2[0].Tags.Count);
+            Assert.Equal(1, songs2[1].Tags.Count);
+            Assert.Equal(3, songs2[2].Tags.Count);
+
+            var tags3 = await g.sqlite.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs)
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToListAsync(true);
+
+
+            var songs11 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs11.Count);
+            Assert.Equal(1, songs11[0].Tags.Count);
+            Assert.Equal(1, songs11[1].Tags.Count);
+            Assert.Equal(1, songs11[2].Tags.Count);
+
+            var songs22 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1),
+                    then => then.IncludeMany(t => t.Songs.Take(1)))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs22.Count);
+            Assert.Equal(1, songs22[0].Tags.Count);
+            Assert.Equal(1, songs22[1].Tags.Count);
+            Assert.Equal(1, songs22[2].Tags.Count);
+
+            var tags33 = await g.sqlite.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Take(1))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToListAsync(true);
+
+            // --- Select ---
+
+            await new List<Song>(new[] { song1, song2, song3 }).IncludeManyAsync(g.sqlite, a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }));
+
+            var asongs1 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs1.Count);
+            Assert.Equal(2, songs1[0].Tags.Count);
+            Assert.Equal(1, songs1[1].Tags.Count);
+            Assert.Equal(3, songs1[2].Tags.Count);
+
+            var asongs2 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.IncludeMany(t => t.Songs.Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs2.Count);
+            Assert.Equal(2, songs2[0].Tags.Count);
+            Assert.Equal(1, songs2[1].Tags.Count);
+            Assert.Equal(3, songs2[2].Tags.Count);
+
+            var atags3 = await g.sqlite.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToListAsync(true);
+
+
+            var asongs11 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs11.Count);
+            Assert.Equal(1, songs11[0].Tags.Count);
+            Assert.Equal(1, songs11[1].Tags.Count);
+            Assert.Equal(1, songs11[2].Tags.Count);
+
+            var asongs22 = await g.sqlite.Select<Song>()
+                .IncludeMany(a => a.Tags.Take(1).Select(b => new Tag { Id = b.Id, Name = b.Name }),
+                    then => then.IncludeMany(t => t.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title })))
+                .Where(a => a.Id == song1.Id || a.Id == song2.Id || a.Id == song3.Id)
+                .ToListAsync();
+            Assert.Equal(3, songs22.Count);
+            Assert.Equal(1, songs22[0].Tags.Count);
+            Assert.Equal(1, songs22[1].Tags.Count);
+            Assert.Equal(1, songs22[2].Tags.Count);
+
+            var atags33 = await g.sqlite.Select<Song_tag>()
+                .Include(a => a.Tag.Parent)
+                .IncludeMany(a => a.Tag.Songs.Take(1).Select(b => new Song { Id = b.Id, Title = b.Title }))
+                .Where(a => a.Tag.Id == tag1.Id || a.Tag.Id == tag2.Id)
+                .ToListAsync(true);
         }
 
         public class ToDel1Pk
@@ -1342,6 +1760,26 @@ namespace FreeSql.Tests.Sqlite
             Assert.Equal(2, g.sqlite.Select<ToUpd3Pk>().Where(a => a.name.StartsWith("name")).ToUpdate().Set(a => a.name, "nick?").ExecuteAffrows());
             Assert.Equal(5, g.sqlite.Select<ToUpd3Pk>().Count());
             Assert.Equal(5, g.sqlite.Select<ToUpd3Pk>().Where(a => a.name.StartsWith("nick")).Count());
+        }
+
+        [Fact]
+        public void ForUpdate()
+        {
+            var orm = g.sqlite;
+
+            Assert.Equal("安全起见，请务必在事务开启之后，再使用 ForUpdate",
+                Assert.Throws<Exception>(() => orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToList())?.Message);
+
+            orm.Transaction(() =>
+            {
+                var sql = orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToSql().Replace("\r\n", "");
+                Assert.Equal("SELECT a.\"id\", a.\"name\" FROM \"ToUpd1Pk\" a limit 0,1", sql);
+                orm.Select<ToUpd1Pk>().ForUpdate().Limit(1).ToList();
+
+                sql = orm.Select<ToUpd1Pk>().ForUpdate(true).Limit(1).ToSql().Replace("\r\n", "");
+                Assert.Equal("SELECT a.\"id\", a.\"name\" FROM \"ToUpd1Pk\" a limit 0,1", sql);
+                orm.Select<ToUpd1Pk>().ForUpdate(true).Limit(1).ToList();
+            });
         }
     }
 }

@@ -1,4 +1,6 @@
-﻿using FreeSql;
+﻿#if netcore
+
+using FreeSql;
 using FreeSql.DataAnnotations;
 using System;
 using System.Threading.Tasks;
@@ -62,8 +64,17 @@ namespace FreeSql
         /// <summary>
         /// 删除数据
         /// </summary>
+        /// <param name="physicalDelete">是否物理删除</param>
         /// <returns></returns>
-        public virtual Task<bool> DeleteAsync() => this.UpdateIsDeletedAsync(true);
+        async public virtual Task<bool> DeleteAsync(bool physicalDelete = false)
+        {
+            if (physicalDelete == false) return await this.UpdateIsDeletedAsync(true);
+            if (this.Repository == null)
+                return await Orm.Delete<TEntity>(this as TEntity).ExecuteAffrowsAsync() == 1;
+            //this.SetTenantId();
+            this.Repository.UnitOfWork = UnitOfWork.Current.Value;
+            return await this.Repository.DeleteAsync(this as TEntity) == 1;
+        }
         /// <summary>
         /// 恢复删除的数据
         /// </summary>
@@ -116,3 +127,5 @@ namespace FreeSql
         }
     }
 }
+
+#endif

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FreeSql
@@ -42,11 +43,10 @@ namespace FreeSql
         }
 
         ~BaseRepository() => this.Dispose();
-        bool _isdisposed = false;
+        int _disposeCounter;
         public void Dispose()
         {
-            if (_isdisposed) return;
-            _isdisposed = true;
+            if (Interlocked.Increment(ref _disposeCounter) != 1) return;
             try
             {
                 _dbsetPriv?.Dispose();
@@ -63,7 +63,16 @@ namespace FreeSql
         public DbContextOptions DbContextOptions { get => _db.Options; set => _db.Options = value; }
 
         public IFreeSql Orm { get; private set; }
-        public IUnitOfWork UnitOfWork { get; set; }
+        IUnitOfWork _unitOfWork;
+        public IUnitOfWork UnitOfWork
+        {
+            set
+            {
+                _unitOfWork = value;
+                if (_dbsetPriv != null) _dbsetPriv._uow = _unitOfWork; //防止 dbset 对象已经存在，再次设置 UnitOfWork 无法生效，所以作此判断重新设置
+            }
+            get => _unitOfWork;
+        }
         public IUpdate<TEntity> UpdateDiy => _dbset.OrmUpdateInternal(null);
 
         public ISelect<TEntity> Select => _dbset.OrmSelectInternal(null);
@@ -128,6 +137,12 @@ namespace FreeSql
             _dbset.AddOrUpdate(entity);
             _db.SaveChanges();
             return entity;
+        }
+
+        public void SaveMany(TEntity entity, string propertyName)
+        {
+            _dbset.SaveMany(entity, propertyName);
+            _db.SaveChanges();
         }
     }
 

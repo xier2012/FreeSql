@@ -58,7 +58,6 @@ namespace FreeSql.Sqlite
         public int CheckAvailableInterval { get; set; } = 5;
         public string[] Attaches = new string[0];
 
-        static ConcurrentDictionary<string, int> dicConnStrIncr = new ConcurrentDictionary<string, int>(StringComparer.CurrentCultureIgnoreCase);
         private string _connectionString;
         public string ConnectionString
         {
@@ -69,12 +68,11 @@ namespace FreeSql.Sqlite
 
                 var pattern = @"Max\s*pool\s*size\s*=\s*(\d+)";
                 Match m = Regex.Match(_connectionString, pattern, RegexOptions.IgnoreCase);
-                if (m.Success == false || int.TryParse(m.Groups[1].Value, out var poolsize) == false || poolsize <= 0) poolsize = 100;
-                var connStrIncr = dicConnStrIncr.AddOrUpdate(_connectionString, 1, (oldkey, oldval) => oldval + 1);
-                PoolSize = poolsize + connStrIncr;
-                _connectionString = m.Success ?
-                    Regex.Replace(_connectionString, pattern, $"Max pool size={PoolSize}", RegexOptions.IgnoreCase) :
-                    $"{_connectionString};Max pool size={PoolSize}";
+                if (m.Success)
+                {
+                    PoolSize = int.Parse(m.Groups[1].Value);
+                    _connectionString = Regex.Replace(_connectionString, pattern, "", RegexOptions.IgnoreCase);
+                }
 
                 pattern = @"Connection\s*LifeTime\s*=\s*(\d+)";
                 m = Regex.Match(_connectionString, pattern, RegexOptions.IgnoreCase);
@@ -93,14 +91,32 @@ namespace FreeSql.Sqlite
                     _connectionString = Regex.Replace(_connectionString, pattern, "", RegexOptions.IgnoreCase);
                 }
 
-                var att = Regex.Split(_connectionString, @"Attachs\s*=\s*", RegexOptions.IgnoreCase);
+                var att = Regex.Split(_connectionString, @"Pooling\s*=\s*", RegexOptions.IgnoreCase);
+                if (att.Length == 2)
+                {
+                    var idx = att[1].IndexOf(';');
+                    _connectionString = string.Concat(att[0], idx == -1 ? "" : att[1].Substring(idx));
+                }
+
+                att = Regex.Split(_connectionString, @"Attachs\s*=\s*", RegexOptions.IgnoreCase);
                 if (att.Length == 2)
                 {
                     var idx = att[1].IndexOf(';');
                     Attaches = (idx == -1 ? att[1] : att[1].Substring(0, idx)).Split(',');
+                    _connectionString = string.Concat(att[0], idx == -1 ? "" : att[1].Substring(idx));
                 }
 
+                if (_connectionString.ToLower().Contains(":memory:"))
+                {
+                    //内存模式
+                    PoolSize = 1;
+                }
+
+#if ns20
+                minPoolSize = 1;
+#endif
                 FreeSql.Internal.CommonUtils.PrevReheatConnectionPool(_pool, minPoolSize);
+
             }
         }
 
@@ -129,8 +145,8 @@ namespace FreeSql.Sqlite
             {
                 if (obj.Value == null)
                 {
-                    if (_pool.SetUnavailable(new Exception("连接字符串错误")) == true)
-                        throw new Exception($"【{this.Name}】连接字符串错误，请检查。");
+                    if (_pool.SetUnavailable(new Exception("连接字符串错误，或者检查项目属性 > 生成 > 目标平台：x86 | x64")) == true)
+                        throw new Exception($"【{this.Name}】连接字符串错误，请检查。或者检查项目属性 > 生成 > 目标平台：x86 | x64");
                     return;
                 }
 
@@ -215,7 +231,10 @@ namespace FreeSql.Sqlite
         {
             try
             {
-                PingCommand(that).ExecuteNonQuery();
+                using (var cmd = PingCommand(that))
+                {
+                    cmd.ExecuteNonQuery();
+                }
                 return true;
             }
             catch
@@ -233,11 +252,12 @@ namespace FreeSql.Sqlite
             {
                 var sb = new StringBuilder();
                 foreach (var att in attach)
-                    sb.Append($"attach database [{att}] as [{att.Split('.').First()}];\r\n");
+                    sb.Append($"attach database [{att}] as [{att.Split('/', '\\').Last().Split('.').First()}];\r\n");
 
                 var cmd = that.CreateCommand();
                 cmd.CommandText = sb.ToString();
                 cmd.ExecuteNonQuery();
+                cmd.Dispose();
             }
         }
 
@@ -247,7 +267,10 @@ namespace FreeSql.Sqlite
         {
             try
             {
-                await PingCommand(that).ExecuteNonQueryAsync();
+                using (var cmd = PingCommand(that))
+                {
+                    await cmd.ExecuteNonQueryAsync();
+                }
                 return true;
             }
             catch
@@ -265,11 +288,12 @@ namespace FreeSql.Sqlite
             {
                 var sb = new StringBuilder();
                 foreach (var att in attach)
-                    sb.Append($"attach database [{att}] as [{att.Split('.').First()}];\r\n");
+                    sb.Append($"attach database [{att}] as [{att.Split('/', '\\').Last().Split('.').First()}];\r\n");
 
                 var cmd = that.CreateCommand();
                 cmd.CommandText = sb.ToString();
                 await cmd.ExecuteNonQueryAsync();
+                cmd.Dispose();
             }
         }
 #endif

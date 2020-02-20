@@ -1,4 +1,5 @@
 ﻿using FreeSql.Internal;
+using FreeSql.Internal.Model;
 using SafeObjectPool;
 using System;
 using System.Collections;
@@ -12,9 +13,14 @@ namespace FreeSql.Odbc.Default
     class OdbcAdo : FreeSql.Internal.CommonProvider.AdoProvider
     {
         public OdbcAdo() : base(DataType.Odbc) { }
-        public OdbcAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings) : base(DataType.Odbc)
+        public OdbcAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings, Func<DbConnection> connectionFactory) : base(DataType.Odbc)
         {
             base._util = util;
+            if (connectionFactory != null)
+            {
+                MasterPool = new FreeSql.Internal.CommonProvider.DbConnectionPool(DataType.Odbc, connectionFactory);
+                return;
+            }
             if (!string.IsNullOrEmpty(masterConnectionString))
                 MasterPool = new OdbcConnectionPool("主库", masterConnectionString, null, null);
             if (slaveConnectionStrings != null)
@@ -28,16 +34,16 @@ namespace FreeSql.Odbc.Default
         }
         OdbcAdapter Adapter => (_util == null ? FreeSqlOdbcGlobalExtensions.DefaultOdbcAdapter : _util._orm.GetOdbcAdapter());
 
-        static DateTime dt1970 = new DateTime(1970, 1, 1);
-        public override object AddslashesProcessParam(object param, Type mapType)
+        public override object AddslashesProcessParam(object param, Type mapType, ColumnInfo mapColumn)
         {
             if (param == null) return "NULL";
-            if (mapType != null && mapType != param.GetType())
+            if (mapType != null && mapType != param.GetType() && (param is IEnumerable == false))
                 param = Utils.GetDataReaderValue(mapType, param);
+
             if (param is bool || param is bool?)
                 return (bool)param ? 1 : 0;
             else if (param is string)
-                return Adapter.UnicodeStringRawSql(param);
+                return Adapter.UnicodeStringRawSql(param, mapColumn);
             else if (param is char)
                 return string.Concat("'", param.ToString().Replace("'", "''"), "'");
             else if (param is Enum)
@@ -48,13 +54,11 @@ namespace FreeSql.Odbc.Default
                 return Adapter.DateTimeRawSql(param);
             else if (param is TimeSpan || param is TimeSpan?)
                 return Adapter.TimeSpanRawSql(param);
+            else if (param is byte[])
+                return Adapter.ByteRawSql(param as byte[]);
             else if (param is IEnumerable)
-            {
-                var sb = new StringBuilder();
-                var ie = param as IEnumerable;
-                foreach (var z in ie) sb.Append(",").Append(AddslashesProcessParam(z, mapType));
-                return sb.Length == 0 ? "(NULL)" : sb.Remove(0, 1).Insert(0, "(").Append(")").ToString();
-            }
+                return AddslashesIEnumerable(param, mapType, mapColumn);
+
             return string.Concat("'", param.ToString().Replace("'", "''"), "'");
         }
 
@@ -63,9 +67,11 @@ namespace FreeSql.Odbc.Default
             return new OdbcCommand();
         }
 
-        protected override void ReturnConnection(ObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
+        protected override void ReturnConnection(IObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
         {
-            (pool as OdbcConnectionPool).Return(conn, ex);
+            var rawPool = pool as OdbcConnectionPool;
+            if (rawPool != null) rawPool.Return(conn, ex);
+            else pool.Return(conn);
         }
 
         protected override DbParameter[] GetDbParamtersByObject(string sql, object obj) => _util.GetDbParamtersByObject(sql, obj);
