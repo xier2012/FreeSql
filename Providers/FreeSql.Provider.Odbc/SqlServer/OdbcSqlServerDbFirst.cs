@@ -1,12 +1,12 @@
 ﻿using FreeSql.DatabaseModel;
 using FreeSql.Internal;
+using FreeSql.Internal.Model;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Odbc;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace FreeSql.Odbc.SqlServer
 {
@@ -59,36 +59,36 @@ namespace FreeSql.Odbc.SqlServer
             }
         }
 
-        static readonly Dictionary<int, (string csConvert, string csParse, string csStringify, string csType, Type csTypeInfo, Type csNullableTypeInfo, string csTypeValue, string dataReaderMethod)> _dicDbToCs = new Dictionary<int, (string csConvert, string csParse, string csStringify, string csType, Type csTypeInfo, Type csNullableTypeInfo, string csTypeValue, string dataReaderMethod)>() {
-                { (int)OdbcType.Bit, ("(bool?)", "{0} == \"1\"", "{0} == true ? \"1\" : \"0\"", "bool?", typeof(bool), typeof(bool?), "{0}.Value", "GetBoolean") },
+        static readonly Dictionary<int, DbToCs> _dicDbToCs = new Dictionary<int, DbToCs>() {
+                { (int)OdbcType.Bit, new DbToCs("(bool?)", "{0} == \"1\"", "{0} == true ? \"1\" : \"0\"", "bool?", typeof(bool), typeof(bool?), "{0}.Value", "GetBoolean") },
 
-                { (int)OdbcType.TinyInt, ("(byte?)", "byte.Parse({0})", "{0}.ToString()", "byte?", typeof(byte), typeof(byte?), "{0}.Value", "GetByte") },
-                { (int)OdbcType.SmallInt, ("(short?)", "short.Parse({0})", "{0}.ToString()", "short?", typeof(short), typeof(short?), "{0}.Value", "GetInt16") },
-                { (int)OdbcType.Int, ("(int?)", "int.Parse({0})", "{0}.ToString()", "int?", typeof(int), typeof(int?), "{0}.Value", "GetInt32") },
-                { (int)OdbcType.BigInt, ("(long?)", "long.Parse({0})", "{0}.ToString()", "long?", typeof(long), typeof(long?), "{0}.Value", "GetInt64") },
+                { (int)OdbcType.TinyInt, new DbToCs("(byte?)", "byte.Parse({0})", "{0}.ToString()", "byte?", typeof(byte), typeof(byte?), "{0}.Value", "GetByte") },
+                { (int)OdbcType.SmallInt, new DbToCs("(short?)", "short.Parse({0})", "{0}.ToString()", "short?", typeof(short), typeof(short?), "{0}.Value", "GetInt16") },
+                { (int)OdbcType.Int, new DbToCs("(int?)", "int.Parse({0})", "{0}.ToString()", "int?", typeof(int), typeof(int?), "{0}.Value", "GetInt32") },
+                { (int)OdbcType.BigInt, new DbToCs("(long?)", "long.Parse({0})", "{0}.ToString()", "long?", typeof(long), typeof(long?), "{0}.Value", "GetInt64") },
 
-                { (int)OdbcType.Decimal, ("(decimal?)", "decimal.Parse({0})", "{0}.ToString()", "decimal?", typeof(decimal), typeof(decimal?), "{0}.Value", "GetDecimal") },
-                { (int)OdbcType.Double, ("(double?)", "double.Parse({0})", "{0}.ToString()", "double?", typeof(double), typeof(double?), "{0}.Value", "GetDouble") },
-                { (int)OdbcType.Real, ("(float?)", "float.Parse({0})", "{0}.ToString()", "float?", typeof(float), typeof(float?), "{0}.Value", "GetFloat") },
+                { (int)OdbcType.Decimal, new DbToCs("(decimal?)", "decimal.Parse({0})", "{0}.ToString()", "decimal?", typeof(decimal), typeof(decimal?), "{0}.Value", "GetDecimal") },
+                { (int)OdbcType.Double, new DbToCs("(double?)", "double.Parse({0})", "{0}.ToString()", "double?", typeof(double), typeof(double?), "{0}.Value", "GetDouble") },
+                { (int)OdbcType.Real, new DbToCs("(float?)", "float.Parse({0})", "{0}.ToString()", "float?", typeof(float), typeof(float?), "{0}.Value", "GetFloat") },
 
-                { (int)OdbcType.Time, ("(TimeSpan?)", "TimeSpan.Parse(double.Parse({0}))", "{0}.Ticks.ToString()", "TimeSpan?", typeof(TimeSpan), typeof(TimeSpan?), "{0}.Value", "GetValue") },
-                { (int)OdbcType.Date, ("(DateTime?)", "new DateTime(long.Parse({0}))", "{0}.Ticks.ToString()", "DateTime?", typeof(DateTime), typeof(DateTime?), "{0}.Value", "GetDateTime") },
-                { (int)OdbcType.DateTime, ("(DateTime?)", "new DateTime(long.Parse({0}))", "{0}.Ticks.ToString()", "DateTime?", typeof(DateTime), typeof(DateTime?), "{0}.Value", "GetDateTime") },
-                { (int)OdbcType.SmallDateTime, ("(DateTime?)", "new DateTime(long.Parse({0}))", "{0}.Ticks.ToString()", "DateTime?", typeof(DateTime), typeof(DateTime?), "{0}.Value", "GetDateTime") },
+                { (int)OdbcType.Time, new DbToCs("(TimeSpan?)", "TimeSpan.Parse(double.Parse({0}))", "{0}.Ticks.ToString()", "TimeSpan?", typeof(TimeSpan), typeof(TimeSpan?), "{0}.Value", "GetValue") },
+                { (int)OdbcType.Date, new DbToCs("(DateTime?)", "new DateTime(long.Parse({0}))", "{0}.Ticks.ToString()", "DateTime?", typeof(DateTime), typeof(DateTime?), "{0}.Value", "GetDateTime") },
+                { (int)OdbcType.DateTime, new DbToCs("(DateTime?)", "new DateTime(long.Parse({0}))", "{0}.Ticks.ToString()", "DateTime?", typeof(DateTime), typeof(DateTime?), "{0}.Value", "GetDateTime") },
+                { (int)OdbcType.SmallDateTime, new DbToCs("(DateTime?)", "new DateTime(long.Parse({0}))", "{0}.Ticks.ToString()", "DateTime?", typeof(DateTime), typeof(DateTime?), "{0}.Value", "GetDateTime") },
 
-                { (int)OdbcType.Binary, ("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
-                { (int)OdbcType.VarBinary, ("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
-                { (int)OdbcType.Image, ("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
-                { (int)OdbcType.Timestamp, ("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
+                { (int)OdbcType.Binary, new DbToCs("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
+                { (int)OdbcType.VarBinary, new DbToCs("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
+                { (int)OdbcType.Image, new DbToCs("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
+                { (int)OdbcType.Timestamp, new DbToCs("(byte[])", "Convert.FromBase64String({0})", "Convert.ToBase64String({0})", "byte[]", typeof(byte[]), typeof(byte[]), "{0}", "GetValue") },
 
-                { (int)OdbcType.Char, ("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
-                { (int)OdbcType.VarChar, ("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
-                { (int)OdbcType.Text, ("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
-                { (int)OdbcType.NChar, ("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
-                { (int)OdbcType.NVarChar, ("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
-                { (int)OdbcType.NText, ("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
+                { (int)OdbcType.Char, new DbToCs("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
+                { (int)OdbcType.VarChar, new DbToCs("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
+                { (int)OdbcType.Text, new DbToCs("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
+                { (int)OdbcType.NChar, new DbToCs("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
+                { (int)OdbcType.NVarChar, new DbToCs("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
+                { (int)OdbcType.NText, new DbToCs("", "{0}.Replace(StringifySplit, \"|\")", "{0}.Replace(\"|\", StringifySplit)", "string", typeof(string), typeof(string), "{0}", "GetString") },
 
-                { (int)OdbcType.UniqueIdentifier, ("(Guid?)", "Guid.Parse({0})", "{0}.ToString()", "Guid?", typeof(Guid), typeof(Guid?), "{0}.Value", "GetGuid") },
+                { (int)OdbcType.UniqueIdentifier, new DbToCs("(Guid?)", "Guid.Parse({0})", "{0}.ToString()", "Guid?", typeof(Guid), typeof(Guid?), "{0}.Value", "GetGuid") },
             };
 
         public string GetCsConvert(DbColumnInfo column) => _dicDbToCs.TryGetValue(column.DbType, out var trydc) ? (column.IsNullable ? trydc.csConvert : trydc.csConvert.Replace("?", "")) : null;
@@ -106,14 +106,50 @@ namespace FreeSql.Odbc.SqlServer
             return ds.Select(a => a.FirstOrDefault()?.ToString()).ToList();
         }
 
-        public List<DbTableInfo> GetTablesByDatabase(params string[] database)
+        public bool ExistsTable(string name, bool ignoreCase)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            var olddatabase = "";
+            using (var conn = _orm.Ado.MasterPool.Get(TimeSpan.FromSeconds(5)))
+            {
+                olddatabase = conn.Value.Database;
+            }
+            var tbname = _commonUtils.SplitTableName(name);
+            if (tbname?.Length == 1) tbname = new[] { olddatabase, "dbo", tbname[0] };
+            if (tbname?.Length == 2) tbname = new[] { olddatabase, tbname[0], tbname[1] };
+            tbname = tbname.Select(a => a.ToLower()).ToArray();
+            var sql = $@"
+use [{tbname[0]}];
+select 
+1
+from sys.tables a
+inner join sys.schemas b on b.schema_id = a.schema_id
+where lower(b.name)={_commonUtils.FormatSql("{0}", tbname[1])} and lower(a.name)={_commonUtils.FormatSql("{0}", tbname[2])}
+;
+use [{olddatabase}];
+";
+            return string.Concat(_orm.Ado.ExecuteScalar(CommandType.Text, sql)) == "1";
+        }
+        public DbTableInfo GetTableByName(string name, bool ignoreCase = true) => GetTables(null, name, ignoreCase)?.FirstOrDefault();
+        public List<DbTableInfo> GetTablesByDatabase(params string[] database) => GetTables(database, null, false);
+
+        public List<DbTableInfo> GetTables(string[] database, string tablename, bool ignoreCase)
         {
             var olddatabase = "";
             using (var conn = _orm.Ado.MasterPool.Get(TimeSpan.FromSeconds(5)))
             {
                 olddatabase = conn.Value.Database;
             }
-            var dbs = database == null || database.Any() == false ? new[] { olddatabase } : database;
+            string[] tbname = null;
+            string[] dbs = database == null || database.Any() == false ? new[] { olddatabase } : database;
+            if (string.IsNullOrEmpty(tablename) == false)
+            {
+                tbname = _commonUtils.SplitTableName(tablename);
+                if (tbname?.Length == 1) tbname = new[] { olddatabase, "dbo", tbname[0] };
+                if (tbname?.Length == 2) tbname = new[] { olddatabase, tbname[0], tbname[1] };
+                tbname = tbname.Select(a => a.ToLower()).ToArray();
+                dbs = new[] { tbname[0] };
+            }
             var tables = new List<DbTableInfo>();
 
             foreach (var db in dbs)
@@ -126,36 +162,37 @@ namespace FreeSql.Odbc.SqlServer
 
                 var sql = $@"
 use [{db}];
+select * from (
 select 
- a.Object_id
-,b.name 'Owner'
-,a.name 'Name'
-,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = 0 AND name = 'MS_Description') 'Comment'
+ a.object_id
+,b.name 'owner'
+,a.name 'name'
+,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = 0 AND name = 'MS_Description') 'comment'
 ,'TABLE' type
 from sys.tables a
 inner join sys.schemas b on b.schema_id = a.schema_id
 where not(b.name = 'dbo' and a.name = 'sysdiagrams')
 union all
 select
- a.Object_id
-,b.name 'Owner'
-,a.name 'Name'
-,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = 0 AND name = 'MS_Description') 'Comment'
+ a.object_id
+,b.name 'owner'
+,a.name 'name'
+,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = 0 AND name = 'MS_Description') 'comment'
 ,'VIEW' type
 from sys.views a
 inner join sys.schemas b on b.schema_id = a.schema_id
 union all
 select 
- a.Object_id
-,b.name 'Owner'
-,a.name 'Name'
-,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = 0 AND name = 'MS_Description') 'Comment'
+ a.object_id
+,b.name 'owner'
+,a.name 'name'
+,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = 0 AND name = 'MS_Description') 'comment'
 ,'StoreProcedure' type
 from sys.procedures a
 inner join sys.schemas b on b.schema_id = a.schema_id
 where a.type = 'P' and charindex('diagram', a.name) = 0
-order by type desc, b.name, a.name
-;
+) ft_dbf{(tbname == null ? "" : _commonUtils.FormatSql(" where lower([owner])={0} and lower([name])={1}", new[] { tbname[1], tbname[2] }))}
+order by type desc, [owner], [name];
 use [{olddatabase}];
 ";
                 var ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
@@ -224,45 +261,50 @@ use [{olddatabase}];
 
 select 
 isnull(e.name,'') + '.' + isnull(d.name,'')
-,a.Object_id
-,a.name 'Column'
-,b.name 'Type'
+,a.object_id
+,a.name 'column'
+,b.name 'type'
 ,case
- when b.name in ('Text', 'NText', 'Image') then -1
- when b.name in ('NChar', 'NVarchar') then a.max_length / 2
- else a.max_length end 'Length'
+ when b.name in ('text', 'ntext', 'image') then -1
+ when b.name in ('nchar', 'nvarchar') then a.max_length / 2
+ else a.max_length end 'length'
 ,b.name + case 
- when b.name in ('Char', 'VarChar', 'NChar', 'NVarChar', 'Binary', 'VarBinary') then '(' + 
+ when b.name in ('char', 'varchar', 'nchar', 'nvarchar', 'binary', 'varbinary') then '(' + 
   case when a.max_length = -1 then 'MAX' 
-  when b.name in ('NChar', 'NVarchar') then cast(a.max_length / 2 as varchar)
+  when b.name in ('nchar', 'nvarchar') then cast(a.max_length / 2 as varchar)
   else cast(a.max_length as varchar) end + ')'
- when b.name in ('Numeric', 'Decimal') then '(' + cast(a.precision as varchar) + ',' + cast(a.scale as varchar) + ')'
- else '' end as 'SqlType'
-,(select value from sys.extended_properties where major_id = a.object_id AND minor_id = a.column_id AND name = 'MS_Description') 'Comment'
+ when b.name in ('numeric', 'decimal') then '(' + cast(a.precision as varchar) + ',' + cast(a.scale as varchar) + ')'
+ else '' end as 'sqltype'
+,( select value from sys.extended_properties where major_id = a.object_id AND minor_id = a.column_id AND name = 'MS_Description') 'comment'
 {0} a
 inner join sys.types b on b.user_type_id = a.user_type_id
 left join sys.tables d on d.object_id = a.object_id
-left join sys.schemas e on e.schema_id = d.schema_id
+left join sys.schemas e on e.schema_id = d.schema_id{2}
 where {1}
 ";
                 sql = string.Format(tsql_place, @"
-,a.is_nullable 'IsNullable'
-,a.is_identity 'IsIdentity'
-from sys.columns", loc8.ToString().Replace("a.table_name", "a.object_id"));
+,a.is_nullable 'isnullable'
+,a.is_identity 'isidentity'
+,f.text as 'defaultvalue'
+from sys.columns", loc8.ToString().Replace("a.table_name", "a.object_id"), @"
+left join syscomments f on f.id = a.default_object_id
+");
                 if (loc88.Length > 0)
                 {
                     sql += "union all" +
                     string.Format(tsql_place.Replace(
                         " select value from sys.extended_properties where major_id = a.object_id AND minor_id = a.column_id",
                         " select value from sys.extended_properties where major_id = a.object_id AND minor_id = a.parameter_id"), @"
-,cast(0 as bit) 'IsNullable'
-,a.is_output 'IsIdentity'
-from sys.parameters", loc88.ToString().Replace("a.table_name", "a.object_id"));
+,cast(0 as bit) 'isnullable'
+,a.is_output 'isidentity'
+,'' as 'defaultvalue'
+from sys.parameters", loc88.ToString().Replace("a.table_name", "a.object_id"), "");
                 }
                 sql = $"use [{db}];{sql};use [{olddatabase}]; ";
                 ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
                 if (ds == null) return loc1;
 
+                var position = 0;
                 foreach (object[] row in ds)
                 {
                     var table_id = string.Concat(row[0]);
@@ -274,6 +316,7 @@ from sys.parameters", loc88.ToString().Replace("a.table_name", "a.object_id"));
                     var comment = string.Concat(row[6]);
                     var is_nullable = bool.Parse(string.Concat(row[7]));
                     var is_identity = bool.Parse(string.Concat(row[8]));
+                    var defaultValue = string.Concat(row[9]);
                     if (max_length == 0) max_length = -1;
 
                     loc3[object_id].Add(column, new DbColumnInfo
@@ -286,7 +329,9 @@ from sys.parameters", loc88.ToString().Replace("a.table_name", "a.object_id"));
                         DbTypeText = type,
                         DbTypeTextFull = sqlType,
                         Table = loc2[object_id],
-                        Coment = comment
+                        Coment = comment,
+                        DefaultValue = defaultValue,
+                        Position = ++position
                     });
                     loc3[object_id][column].DbType = this.GetDbType(loc3[object_id][column]);
                     loc3[object_id][column].CsType = this.GetCsTypeInfo(loc3[object_id][column]);
@@ -295,13 +340,13 @@ from sys.parameters", loc88.ToString().Replace("a.table_name", "a.object_id"));
                 sql = $@"
 use [{db}];
 select 
- a.object_id 'Object_id'
-,c.name 'Column'
-,b.name 'Index_id'
-,b.is_unique 'IsUnique'
-,b.is_primary_key 'IsPrimaryKey'
-,cast(case when b.type_desc = 'CLUSTERED' then 1 else 0 end as bit) 'IsClustered'
-,case when a.is_descending_key = 1 then 1 else 0 end 'IsDesc'
+ a.object_id 'object_id'
+,c.name 'column'
+,b.name 'index_id'
+,b.is_unique 'isunique'
+,b.is_primary_key 'isprimarykey'
+,cast(case when b.type_desc = 'CLUSTERED' then 1 else 0 end as bit) 'isclustered'
+,case when a.is_descending_key = 1 then 1 else 0 end 'isdesc'
 from sys.index_columns a
 inner join sys.indexes b on b.object_id = a.object_id and b.index_id = a.index_id
 left join sys.columns c on c.object_id = a.object_id and c.column_id = a.column_id
@@ -358,17 +403,19 @@ use [{olddatabase}];
                     }
                 }
 
-                sql = $@"
+                if (tbname == null)
+                {
+                    sql = $@"
 use [{db}];
 select 
- b.object_id 'Object_id'
-,c.name 'Column'
-,e.name 'FKId'
+ b.object_id 'object_id'
+,c.name 'column'
+,e.name 'fkid'
 ,a.referenced_object_id
-,cast(1 as bit) 'IsForeignKey'
-,d.name 'Referenced_Column'
-,null 'Referenced_Sln'
-,null 'Referenced_Table'
+,cast(1 as bit) 'isforeignkey'
+,d.name 'referenced_column'
+,null 'referenced_sln'
+,null 'referenced_table'
 from sys.foreign_key_columns a
 inner join sys.tables b on b.object_id = a.parent_object_id
 inner join sys.columns c on c.object_id = a.parent_object_id and c.column_id = a.parent_column_id
@@ -378,47 +425,48 @@ where {loc8.ToString().Replace("a.table_name", "b.object_id")}
 ;
 use [{olddatabase}];
 ";
-                ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
-                if (ds == null) return loc1;
+                    ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
+                    if (ds == null) return loc1;
 
-                var fkColumns = new Dictionary<int, Dictionary<string, DbForeignInfo>>();
-                foreach (object[] row in ds)
-                {
-                    int object_id, referenced_object_id;
-                    int.TryParse(string.Concat(row[0]), out object_id);
-                    var column = string.Concat(row[1]);
-                    string fk_id = string.Concat(row[2]);
-                    int.TryParse(string.Concat(row[3]), out referenced_object_id);
-                    var is_foreign_key = bool.Parse(string.Concat(row[4]));
-                    var referenced_column = string.Concat(row[5]);
-                    var referenced_db = string.Concat(row[6]);
-                    var referenced_table = string.Concat(row[7]);
-                    DbColumnInfo loc9 = loc3[object_id][column];
-                    DbTableInfo loc10 = null;
-                    DbColumnInfo loc11 = null;
-                    bool isThisSln = referenced_object_id != 0;
-
-                    if (isThisSln)
+                    var fkColumns = new Dictionary<int, Dictionary<string, DbForeignInfo>>();
+                    foreach (object[] row in ds)
                     {
-                        loc10 = loc2[referenced_object_id];
-                        loc11 = loc3[referenced_object_id][referenced_column];
-                    }
-                    else
-                    {
+                        int object_id, referenced_object_id;
+                        int.TryParse(string.Concat(row[0]), out object_id);
+                        var column = string.Concat(row[1]);
+                        string fk_id = string.Concat(row[2]);
+                        int.TryParse(string.Concat(row[3]), out referenced_object_id);
+                        var is_foreign_key = bool.Parse(string.Concat(row[4]));
+                        var referenced_column = string.Concat(row[5]);
+                        var referenced_db = string.Concat(row[6]);
+                        var referenced_table = string.Concat(row[7]);
+                        DbColumnInfo loc9 = loc3[object_id][column];
+                        DbTableInfo loc10 = null;
+                        DbColumnInfo loc11 = null;
+                        bool isThisSln = referenced_object_id != 0;
 
+                        if (isThisSln)
+                        {
+                            loc10 = loc2[referenced_object_id];
+                            loc11 = loc3[referenced_object_id][referenced_column];
+                        }
+                        else
+                        {
+
+                        }
+                        Dictionary<string, DbForeignInfo> loc12 = null;
+                        DbForeignInfo loc13 = null;
+                        if (!fkColumns.TryGetValue(object_id, out loc12))
+                            fkColumns.Add(object_id, loc12 = new Dictionary<string, DbForeignInfo>());
+                        if (!loc12.TryGetValue(fk_id, out loc13))
+                            loc12.Add(fk_id, loc13 = new DbForeignInfo { Table = loc2[object_id], ReferencedTable = loc10 });
+                        loc13.Columns.Add(loc9);
+                        loc13.ReferencedColumns.Add(loc11);
                     }
-                    Dictionary<string, DbForeignInfo> loc12 = null;
-                    DbForeignInfo loc13 = null;
-                    if (!fkColumns.TryGetValue(object_id, out loc12))
-                        fkColumns.Add(object_id, loc12 = new Dictionary<string, DbForeignInfo>());
-                    if (!loc12.TryGetValue(fk_id, out loc13))
-                        loc12.Add(fk_id, loc13 = new DbForeignInfo { Table = loc2[object_id], ReferencedTable = loc10 });
-                    loc13.Columns.Add(loc9);
-                    loc13.ReferencedColumns.Add(loc11);
+                    foreach (var table_id in fkColumns.Keys)
+                        foreach (var fk in fkColumns[table_id])
+                            loc2[table_id].ForeignsDict.Add(fk.Key, fk.Value);
                 }
-                foreach (var table_id in fkColumns.Keys)
-                    foreach (var fk in fkColumns[table_id])
-                        loc2[table_id].ForeignsDict.Add(fk.Key, fk.Value);
 
                 foreach (var table_id in loc3.Keys)
                 {

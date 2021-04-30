@@ -1,13 +1,9 @@
 ﻿using FreeSql.Aop;
-using FreeSql.Internal;
-using FreeSql.Internal.Model;
 using System;
-using System.Collections.Generic;
 using System.Data;
-using System.Data.Common;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FreeSql.MySql.Curd
@@ -22,6 +18,7 @@ namespace FreeSql.MySql.Curd
         {
             _mysqlInsert = insert as MySqlInsert<T1>;
             if (_mysqlInsert == null) throw new Exception("OnDuplicateKeyUpdate 是 FreeSql.Provider.MySql/FreeSql.Provider.MySqlConnector 特有的功能");
+            if (_mysqlInsert._noneParameterFlag == "c") _mysqlInsert._noneParameterFlag = "cu";
         }
 
         protected void ClearData()
@@ -88,7 +85,7 @@ namespace FreeSql.MySql.Curd
 
                     if (colidx > 0) sb.Append(", \r\n");
 
-                    if (col.Attribute.IsVersion == true)
+                    if (col.Attribute.IsVersion == true && col.Attribute.MapType != typeof(byte[]))
                     {
                         var field = _mysqlInsert.InternalCommonUtils.QuoteSqlName(col.Attribute.Name);
                         sb.Append(field).Append(" = ").Append(field).Append(" + 1");
@@ -117,22 +114,22 @@ namespace FreeSql.MySql.Curd
             if (string.IsNullOrEmpty(sql)) return 0;
 
             var before = new CurdBeforeEventArgs(_mysqlInsert.InternalTable.Type, _mysqlInsert.InternalTable, CurdType.Insert, sql, _mysqlInsert.InternalParams);
-            _mysqlInsert.InternalOrm.Aop.CurdBefore?.Invoke(_mysqlInsert, before);
+            _mysqlInsert.InternalOrm.Aop.CurdBeforeHandler?.Invoke(_mysqlInsert, before);
             long ret = 0;
             Exception exception = null;
             try
             {
-                ret = _mysqlInsert.InternalOrm.Ado.ExecuteNonQuery(_mysqlInsert.InternalConnection, _mysqlInsert.InternalTransaction, CommandType.Text, sql, _mysqlInsert.InternalParams);
+                ret = _mysqlInsert.InternalOrm.Ado.ExecuteNonQuery(_mysqlInsert.InternalConnection, _mysqlInsert.InternalTransaction, CommandType.Text, sql, _mysqlInsert._commandTimeout, _mysqlInsert.InternalParams);
             }
             catch (Exception ex)
             {
                 exception = ex;
-                throw ex;
+                throw;
             }
             finally
             {
                 var after = new CurdAfterEventArgs(before, exception, ret);
-                _mysqlInsert.InternalOrm.Aop.CurdAfter?.Invoke(_mysqlInsert, after);
+                _mysqlInsert.InternalOrm.Aop.CurdAfterHandler?.Invoke(_mysqlInsert, after);
                 ClearData();
             }
             return ret;
@@ -140,28 +137,28 @@ namespace FreeSql.MySql.Curd
 
 #if net40
 #else
-        async public Task<long> ExecuteAffrowsAsync()
+        async public Task<long> ExecuteAffrowsAsync(CancellationToken cancellationToken = default)
         {
             var sql = this.ToSql();
             if (string.IsNullOrEmpty(sql)) return 0;
 
             var before = new CurdBeforeEventArgs(_mysqlInsert.InternalTable.Type, _mysqlInsert.InternalTable, CurdType.Insert, sql, _mysqlInsert.InternalParams);
-            _mysqlInsert.InternalOrm.Aop.CurdBefore?.Invoke(_mysqlInsert, before);
+            _mysqlInsert.InternalOrm.Aop.CurdBeforeHandler?.Invoke(_mysqlInsert, before);
             long ret = 0;
             Exception exception = null;
             try
             {
-                ret = await _mysqlInsert.InternalOrm.Ado.ExecuteNonQueryAsync(_mysqlInsert.InternalConnection, _mysqlInsert.InternalTransaction, CommandType.Text, sql, _mysqlInsert.InternalParams);
+                ret = await _mysqlInsert.InternalOrm.Ado.ExecuteNonQueryAsync(_mysqlInsert.InternalConnection, _mysqlInsert.InternalTransaction, CommandType.Text, sql, _mysqlInsert._commandTimeout, _mysqlInsert.InternalParams, cancellationToken);
             }
             catch (Exception ex)
             {
                 exception = ex;
-                throw ex;
+                throw;
             }
             finally
             {
                 var after = new CurdAfterEventArgs(before, exception, ret);
-                _mysqlInsert.InternalOrm.Aop.CurdAfter?.Invoke(_mysqlInsert, after);
+                _mysqlInsert.InternalOrm.Aop.CurdAfterHandler?.Invoke(_mysqlInsert, after);
                 ClearData();
             }
             return ret;

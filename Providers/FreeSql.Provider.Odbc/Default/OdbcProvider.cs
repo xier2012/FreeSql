@@ -12,25 +12,15 @@ using System.Threading;
 namespace FreeSql.Odbc.Default
 {
 
-    public class OdbcProvider<TMark> : IFreeSql<TMark>
+    public class OdbcProvider<TMark> : BaseDbProvider, IFreeSql<TMark>
     {
+        public override ISelect<T1> CreateSelectProvider<T1>(object dywhere) => new OdbcSelect<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, dywhere);
+        public override IInsert<T1> CreateInsertProvider<T1>() => new OdbcInsert<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression);
+        public override IUpdate<T1> CreateUpdateProvider<T1>(object dywhere) => new OdbcUpdate<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, dywhere);
+        public override IDelete<T1> CreateDeleteProvider<T1>(object dywhere) => new OdbcDelete<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, dywhere);
+        public override IInsertOrUpdate<T1> CreateInsertOrUpdateProvider<T1>() => throw new NotImplementedException();
 
-        public ISelect<T1> Select<T1>() where T1 : class => new OdbcSelect<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, null);
-        public ISelect<T1> Select<T1>(object dywhere) where T1 : class => new OdbcSelect<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, dywhere);
-        public IInsert<T1> Insert<T1>() where T1 : class => new OdbcInsert<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression);
-        public IInsert<T1> Insert<T1>(T1 source) where T1 : class => this.Insert<T1>().AppendData(source);
-        public IInsert<T1> Insert<T1>(T1[] source) where T1 : class => this.Insert<T1>().AppendData(source);
-        public IInsert<T1> Insert<T1>(List<T1> source) where T1 : class => this.Insert<T1>().AppendData(source);
-        public IInsert<T1> Insert<T1>(IEnumerable<T1> source) where T1 : class => this.Insert<T1>().AppendData(source);
-        public IUpdate<T1> Update<T1>() where T1 : class => new OdbcUpdate<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, null);
-        public IUpdate<T1> Update<T1>(object dywhere) where T1 : class => new OdbcUpdate<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, dywhere);
-        public IDelete<T1> Delete<T1>() where T1 : class => new OdbcDelete<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, null);
-        public IDelete<T1> Delete<T1>(object dywhere) where T1 : class => new OdbcDelete<T1>(this, this.InternalCommonUtils, this.InternalCommonExpression, dywhere);
-
-        public IAdo Ado { get; }
-        public IAop Aop { get; }
-        public ICodeFirst CodeFirst { get; }
-        public IDbFirst DbFirst => throw new NotImplementedException("FreeSql.Odbc.Default 未实现该功能");
+        public override IDbFirst DbFirst => throw new NotImplementedException("FreeSql.Odbc.Default 未实现该功能");
 
         /// <summary>
         /// 生成一个普通访问功能的 IFreeSql 对象，用来访问 odbc 
@@ -81,18 +71,9 @@ namespace FreeSql.Odbc.Default
             });
         }
 
-        internal CommonUtils InternalCommonUtils { get; }
-        internal CommonExpression InternalCommonExpression { get; }
-
-        public void Transaction(Action handler) => Ado.Transaction(handler);
-        public void Transaction(TimeSpan timeout, Action handler) => Ado.Transaction(timeout, handler);
-        public void Transaction(IsolationLevel isolationLevel, TimeSpan timeout, Action handler) => Ado.Transaction(isolationLevel, timeout, handler);
-
-        public GlobalFilter GlobalFilter { get; } = new GlobalFilter();
-
         ~OdbcProvider() => this.Dispose();
         int _disposeCounter;
-        public void Dispose()
+        public override void Dispose()
         {
             if (Interlocked.Increment(ref _disposeCounter) != 1) return;
             try
@@ -101,7 +82,7 @@ namespace FreeSql.Odbc.Default
             }
             finally
             {
-                FreeSqlOdbcGlobalExtensions._dicOdbcAdater.TryRemove(this as IFreeSql, out var tryada);
+                FreeSqlOdbcGlobalExtensions._dicOdbcAdater.TryRemove(Ado.Identifier, out var tryada);
             }
         }
     }
@@ -110,7 +91,7 @@ namespace FreeSql.Odbc.Default
 partial class FreeSqlOdbcGlobalExtensions
 {
     internal static OdbcAdapter DefaultOdbcAdapter = new OdbcAdapter();
-    internal static ConcurrentDictionary<IFreeSql, OdbcAdapter> _dicOdbcAdater = new ConcurrentDictionary<IFreeSql, OdbcAdapter>();
-    public static void SetOdbcAdapter(this IFreeSql that, OdbcAdapter adapter) => _dicOdbcAdater.AddOrUpdate(that, adapter, (fsql, old) => adapter);
-    internal static OdbcAdapter GetOdbcAdapter(this IFreeSql that) => _dicOdbcAdater.TryGetValue(that, out var tryada) ? tryada : DefaultOdbcAdapter;
+    internal static ConcurrentDictionary<Guid, OdbcAdapter> _dicOdbcAdater = new ConcurrentDictionary<Guid, OdbcAdapter>();
+    public static void SetOdbcAdapter(this IFreeSql that, OdbcAdapter adapter) => _dicOdbcAdater.AddOrUpdate(that.Ado.Identifier, adapter, (fsql, old) => adapter);
+    internal static OdbcAdapter GetOdbcAdapter(this IFreeSql that) => _dicOdbcAdater.TryGetValue(that.Ado.Identifier, out var tryada) ? tryada : DefaultOdbcAdapter;
 }

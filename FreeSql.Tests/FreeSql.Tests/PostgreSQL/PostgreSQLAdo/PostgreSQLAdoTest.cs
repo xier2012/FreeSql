@@ -19,6 +19,11 @@ namespace FreeSql.Tests.PostgreSQL
         }
 
         [Fact]
+        public void ExecuteTest()
+        {
+            Assert.True(g.pgsql.Ado.ExecuteConnectTest());
+        }
+        [Fact]
         public void ExecuteReader()
         {
 
@@ -49,6 +54,8 @@ namespace FreeSql.Tests.PostgreSQL
             var t4 = g.pgsql.Ado.Query<(int, string, string)>("select * from xxx");
 
             var t5 = g.pgsql.Ado.Query<dynamic>("select * from xxx");
+
+            var t6 = g.pgsql.Ado.Query<xxx>("select * from xxx where id in @ids", new { ids = new[] { "1", "2", "3" } });
         }
 
         [Fact]

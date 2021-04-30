@@ -177,6 +177,11 @@ INTO ""TB_TOPIC_INSERT""(""CLICKS"") VALUES(:Clicks_9)
 
             Assert.Equal(1, insert.AppendData(items.First()).ExecuteAffrows());
             Assert.Equal(10, insert.AppendData(items).ExecuteAffrows());
+
+            Assert.Equal(10, g.oracle.Select<Topic>().Limit(10).InsertInto(null, a => new Topic
+            {
+                Title = a.Title
+            }));
         }
         [Fact]
         public void ExecuteIdentity()
@@ -193,6 +198,26 @@ INTO ""TB_TOPIC_INSERT""(""CLICKS"") VALUES(:Clicks_9)
             //for (var a = 0; a < 10; a++) items.Add(new Topic { Id = a + 1, Title = $"newtitle{a}", Clicks = a * 100, CreateTime = DateTime.Now });
 
             //var items2 = insert.AppendData(items).ExecuteInserted();
+        }
+
+        [Fact]
+        public void ExecuteOracleBulkCopy()
+        {
+            var items = new List<Topic_bulkcopy>();
+            for (var a = 0; a < 10; a++) items.Add(new Topic_bulkcopy { Title = $"newtitle{a}", Clicks = a * 100, CreateTime = DateTime.Now });
+
+            g.oracle.Insert<Topic_bulkcopy>().AppendData(items).InsertIdentity().ExecuteOracleBulkCopy();
+            //insert.AppendData(items).IgnoreColumns(a => new { a.CreateTime, a.Clicks }).ExecuteSqlBulkCopy();
+            // System.NotSupportedException:“DataSet does not support System.Nullable<>.”
+        }
+        [Table(Name = "tb_topic_bulkcopy")]
+        class Topic_bulkcopy
+        {
+            public Guid Id { get; set; }
+            public int? Clicks { get; set; }
+            public TestTypeInfo Type { get; set; }
+            public string Title { get; set; }
+            public DateTime CreateTime { get; set; }
         }
 
         [Fact]

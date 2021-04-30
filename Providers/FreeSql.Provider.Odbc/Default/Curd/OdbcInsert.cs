@@ -1,10 +1,11 @@
 ﻿using FreeSql.Internal;
-using SafeObjectPool;
+using FreeSql.Internal.ObjectPool;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FreeSql.Odbc.Default
@@ -19,9 +20,9 @@ namespace FreeSql.Odbc.Default
             _utils = _commonUtils as OdbcUtils;
         }
 
-        public override int ExecuteAffrows() => base.SplitExecuteAffrows(_utils.Adapter.InsertBatchSplitLimit, 255);
-        public override long ExecuteIdentity() => base.SplitExecuteIdentity(_utils.Adapter.InsertBatchSplitLimit, 255);
-        public override List<T1> ExecuteInserted() => base.SplitExecuteInserted(_utils.Adapter.InsertBatchSplitLimit, 255);
+        public override int ExecuteAffrows() => base.SplitExecuteAffrows(_batchValuesLimit > 0 ? _batchValuesLimit : _utils.Adapter.InsertBatchSplitLimit, _batchParameterLimit > 0 ? _batchParameterLimit : 255);
+        public override long ExecuteIdentity() => base.SplitExecuteIdentity(_batchValuesLimit > 0 ? _batchValuesLimit : _utils.Adapter.InsertBatchSplitLimit, _batchParameterLimit > 0 ? _batchParameterLimit : 255);
+        public override List<T1> ExecuteInserted() => base.SplitExecuteInserted(_batchValuesLimit > 0 ? _batchValuesLimit : _utils.Adapter.InsertBatchSplitLimit, _batchParameterLimit > 0 ? _batchParameterLimit : 255);
 
         protected override long RawExecuteIdentity()
         {
@@ -30,7 +31,7 @@ namespace FreeSql.Odbc.Default
 
             Object<DbConnection> poolConn = null;
             var before = new Aop.CurdBeforeEventArgs(_table.Type, _table, Aop.CurdType.Insert, string.Concat(sql, $"; {_utils.Adapter.InsertAfterGetIdentitySql}"), _params);
-            _orm.Aop.CurdBefore?.Invoke(this, before);
+            _orm.Aop.CurdBeforeHandler?.Invoke(this, before);
             long ret = 0;
             Exception exception = null;
             try
@@ -42,8 +43,8 @@ namespace FreeSql.Odbc.Default
                     poolConn = _orm.Ado.MasterPool.Get();
                     conn = poolConn.Value;
                 }
-                _orm.Ado.ExecuteNonQuery(conn, _transaction, CommandType.Text, sql, _params);
-                ret = long.TryParse(string.Concat(_orm.Ado.ExecuteScalar(conn, _transaction, CommandType.Text, $" {_utils.Adapter.InsertAfterGetIdentitySql}")), out var trylng) ? trylng : 0;
+                _orm.Ado.ExecuteNonQuery(conn, _transaction, CommandType.Text, sql, _commandTimeout, _params);
+                ret = long.TryParse(string.Concat(_orm.Ado.ExecuteScalar(conn, _transaction, CommandType.Text, $" {_utils.Adapter.InsertAfterGetIdentitySql}", _commandTimeout)), out var trylng) ? trylng : 0;
             }
             catch (Exception ex)
             {
@@ -56,7 +57,7 @@ namespace FreeSql.Odbc.Default
                     _orm.Ado.MasterPool.Return(poolConn);
 
                 var after = new Aop.CurdAfterEventArgs(before, exception, ret);
-                _orm.Aop.CurdAfter?.Invoke(this, after);
+                _orm.Aop.CurdAfterHandler?.Invoke(this, after);
             }
             return ret;
         }
@@ -65,18 +66,18 @@ namespace FreeSql.Odbc.Default
 
 #if net40
 #else
-        public override Task<int> ExecuteAffrowsAsync() => base.SplitExecuteAffrowsAsync(_utils.Adapter.InsertBatchSplitLimit, 255);
-        public override Task<long> ExecuteIdentityAsync() => base.SplitExecuteIdentityAsync(_utils.Adapter.InsertBatchSplitLimit, 255);
-        public override Task<List<T1>> ExecuteInsertedAsync() => base.SplitExecuteInsertedAsync(_utils.Adapter.InsertBatchSplitLimit, 255);
-        
-        async protected override Task<long> RawExecuteIdentityAsync()
+        public override Task<int> ExecuteAffrowsAsync(CancellationToken cancellationToken = default) => base.SplitExecuteAffrowsAsync(_batchValuesLimit > 0 ? _batchValuesLimit : _utils.Adapter.InsertBatchSplitLimit, _batchParameterLimit > 0 ? _batchParameterLimit : 255, cancellationToken);
+        public override Task<long> ExecuteIdentityAsync(CancellationToken cancellationToken = default) => base.SplitExecuteIdentityAsync(_batchValuesLimit > 0 ? _batchValuesLimit : _utils.Adapter.InsertBatchSplitLimit, _batchParameterLimit > 0 ? _batchParameterLimit : 255, cancellationToken);
+        public override Task<List<T1>> ExecuteInsertedAsync(CancellationToken cancellationToken = default) => base.SplitExecuteInsertedAsync(_batchValuesLimit > 0 ? _batchValuesLimit : _utils.Adapter.InsertBatchSplitLimit, _batchParameterLimit > 0 ? _batchParameterLimit : 255, cancellationToken);
+
+        async protected override Task<long> RawExecuteIdentityAsync(CancellationToken cancellationToken = default)
         {
             var sql = this.ToSql();
             if (string.IsNullOrEmpty(sql)) return 0;
 
             Object<DbConnection> poolConn = null;
             var before = new Aop.CurdBeforeEventArgs(_table.Type, _table, Aop.CurdType.Insert, string.Concat(sql, $"; {_utils.Adapter.InsertAfterGetIdentitySql}"), _params);
-            _orm.Aop.CurdBefore?.Invoke(this, before);
+            _orm.Aop.CurdBeforeHandler?.Invoke(this, before);
             long ret = 0;
             Exception exception = null;
             try
@@ -88,8 +89,8 @@ namespace FreeSql.Odbc.Default
                     poolConn = _orm.Ado.MasterPool.Get();
                     conn = poolConn.Value;
                 }
-                await _orm.Ado.ExecuteNonQueryAsync(conn, _transaction, CommandType.Text, sql, _params);
-                ret = long.TryParse(string.Concat(await _orm.Ado.ExecuteScalarAsync(conn, _transaction, CommandType.Text, $" {_utils.Adapter.InsertAfterGetIdentitySql}")), out var trylng) ? trylng : 0;
+                await _orm.Ado.ExecuteNonQueryAsync(conn, _transaction, CommandType.Text, sql, _commandTimeout, _params, cancellationToken);
+                ret = long.TryParse(string.Concat(await _orm.Ado.ExecuteScalarAsync(conn, _transaction, CommandType.Text, $" {_utils.Adapter.InsertAfterGetIdentitySql}", _commandTimeout, null, cancellationToken)), out var trylng) ? trylng : 0;
             }
             catch (Exception ex)
             {
@@ -102,11 +103,11 @@ namespace FreeSql.Odbc.Default
                     _orm.Ado.MasterPool.Return(poolConn);
 
                 var after = new Aop.CurdAfterEventArgs(before, exception, ret);
-                _orm.Aop.CurdAfter?.Invoke(this, after);
+                _orm.Aop.CurdAfterHandler?.Invoke(this, after);
             }
             return ret;
         }
-        protected override Task<List<T1>> RawExecuteInsertedAsync() => throw new NotImplementedException("FreeSql.Odbc.Default 未实现该功能");
+        protected override Task<List<T1>> RawExecuteInsertedAsync(CancellationToken cancellationToken = default) => throw new NotImplementedException("FreeSql.Odbc.Default 未实现该功能");
 #endif
     }
 }

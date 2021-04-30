@@ -1,16 +1,22 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Reflection;
 
 namespace FreeSql.DataAnnotations
 {
     public class ColumnFluent
     {
 
-        public ColumnFluent(ColumnAttribute column)
+        public ColumnFluent(ColumnAttribute column, PropertyInfo property, Type entityType)
         {
             _column = column;
+            _property = property;
+            _entityType = entityType;
         }
 
-        ColumnAttribute _column;
+        public ColumnAttribute _column;
+        public PropertyInfo _property;
+        public Type _entityType;
         /// <summary>
         /// 数据库列名
         /// </summary>
@@ -168,6 +174,45 @@ namespace FreeSql.DataAnnotations
         public ColumnFluent InsertValueSql(string value)
         {
             _column.InsertValueSql = value;
+            return this;
+        }
+
+        /// <summary>
+        /// decimal/numeric 类型的长度/小数位长度
+        /// </summary>
+        /// <param name="precision">总长度</param>
+        /// <param name="scale">小数位长度</param>
+        /// <returns></returns>
+        public ColumnFluent Precision(int precision, int scale = 0)
+        {
+            _column.Precision = precision;
+            _column.Scale = scale;
+            return this;
+        }
+
+        /// <summary>
+        /// 重写功能<para></para>
+        /// 比如：[Column(RewriteSql = &quot;geography::STGeomFromText({0},4236)&quot;)]<para></para>
+        /// 插入：INSERT INTO [table]([geo]) VALUES(geography::STGeomFromText('...',4236))<para></para>
+        /// 提示：更新也生效
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public ColumnFluent RewriteSql(string value)
+        {
+            _column.RewriteSql = value;
+            return this;
+        }
+        /// <summary>
+        /// 重读功能<para></para>
+        /// 比如：[Column(RereadSql = &quot;{0}.STAsText()&quot;)]<para></para>
+        /// 查询：SELECT a.[id], a.[geo].STAsText() FROM [table] a
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public ColumnFluent RereadSql(string value)
+        {
+            _column.RereadSql = value;
             return this;
         }
     }

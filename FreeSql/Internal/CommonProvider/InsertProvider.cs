@@ -1,6 +1,6 @@
 ﻿using FreeSql.Internal.Model;
 using FreeSql.Extensions.EntityUtil;
-using SafeObjectPool;
+using FreeSql.Internal.ObjectPool;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -15,20 +15,23 @@ namespace FreeSql.Internal.CommonProvider
 
     public abstract partial class InsertProvider<T1> : IInsert<T1> where T1 : class
     {
-        protected IFreeSql _orm;
-        protected CommonUtils _commonUtils;
-        protected CommonExpression _commonExpression;
-        protected List<T1> _source = new List<T1>();
-        protected Dictionary<string, bool> _ignore = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
-        protected Dictionary<string, bool> _auditValueChangedDict = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
-        protected TableInfo _table;
-        protected Func<string, string> _tableRule;
-        protected bool _noneParameter, _insertIdentity;
-        protected int _batchValuesLimit, _batchParameterLimit;
-        protected bool _batchAutoTransaction = true;
-        protected DbParameter[] _params;
-        protected DbTransaction _transaction;
-        protected DbConnection _connection;
+        public IFreeSql _orm;
+        public CommonUtils _commonUtils;
+        public CommonExpression _commonExpression;
+        public List<T1> _source = new List<T1>();
+        public Dictionary<string, bool> _ignore = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
+        public Dictionary<string, bool> _auditValueChangedDict = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
+        public TableInfo _table;
+        public Func<string, string> _tableRule;
+        public string _noneParameterFlag = "c";
+        public bool _noneParameter, _insertIdentity;
+        public int _batchValuesLimit, _batchParameterLimit;
+        public bool _batchAutoTransaction = true;
+        public Action<BatchProgressStatus<T1>> _batchProgress;
+        public DbParameter[] _params;
+        public DbTransaction _transaction;
+        public DbConnection _connection;
+        public int _commandTimeout = 0;
 
         public InsertProvider(IFreeSql orm, CommonUtils commonUtils, CommonExpression commonExpression)
         {
@@ -55,6 +58,7 @@ namespace FreeSql.Internal.CommonProvider
         {
             _batchValuesLimit = _batchParameterLimit = 0;
             _batchAutoTransaction = true;
+            _batchProgress = null;
             _insertIdentity = false;
             _source.Clear();
             _ignore.Clear();
@@ -75,6 +79,11 @@ namespace FreeSql.Internal.CommonProvider
             _connection = connection;
             return this;
         }
+        public IInsert<T1> CommandTimeout(int timeout)
+        {
+            _commandTimeout = timeout;
+            return this;
+        }
 
         public IInsert<T1> InsertIdentity()
         {
@@ -82,9 +91,9 @@ namespace FreeSql.Internal.CommonProvider
             return this;
         }
 
-        public IInsert<T1> NoneParameter()
+        public IInsert<T1> NoneParameter(bool isNotCommandParameter = true)
         {
-            _noneParameter = true;
+            _noneParameter = isNotCommandParameter;
             return this;
         }
 
@@ -93,6 +102,12 @@ namespace FreeSql.Internal.CommonProvider
             _batchValuesLimit = valuesLimit;
             _batchParameterLimit = parameterLimit;
             _batchAutoTransaction = autoTransaction;
+            return this;
+        }
+
+        public IInsert<T1> BatchProgress(Action<BatchProgressStatus<T1>> callback)
+        {
+            _batchProgress = callback;
             return this;
         }
 
@@ -121,7 +136,7 @@ namespace FreeSql.Internal.CommonProvider
                 source = source.Where(a => a != null).ToList();
                 AuditDataValue(this, source, _orm, _table, _auditValueChangedDict);
                 _source.AddRange(source);
-                
+
             }
             return this;
         }
@@ -134,34 +149,38 @@ namespace FreeSql.Internal.CommonProvider
         public static void AuditDataValue(object sender, T1 data, IFreeSql orm, TableInfo table, Dictionary<string, bool> changedDict)
         {
             if (data == null) return;
+            if (typeof(T1) == typeof(object) && new[] { table.Type, table.TypeLazy }.Contains(data.GetType()) == false)
+                throw new Exception($"操作的数据类型({data.GetType().DisplayCsharp()}) 与 AsType({table.Type.DisplayCsharp()}) 不一致，请检查。");
             foreach (var col in table.Columns.Values)
             {
-                object val = col.GetMapValue(data);
-                if (col.Attribute.IsPrimary)
-                {
-                    if (col.Attribute.MapType.NullableTypeOrThis() == typeof(Guid) && (val == null || (Guid)val == Guid.Empty))
-                        col.SetMapValue(data, val = FreeUtil.NewMongodbId());
-                    else if (col.CsType.NullableTypeOrThis() == typeof(Guid))
-                    {
-                        var guidVal = orm.GetEntityValueWithPropertyName(table.Type, data, col.CsName);
-                        if (guidVal == null || (Guid)guidVal == Guid.Empty)
-                        {
-                            orm.SetEntityValueWithPropertyName(table.Type, data, col.CsName, FreeUtil.NewMongodbId());
-                            val = col.GetMapValue(data);
-                        }
-                    }
-                }
-                if (orm.Aop.AuditValue != null)
+                object val = col.GetValue(data);
+                if (orm.Aop.AuditValueHandler != null)
                 {
                     var auditArgs = new Aop.AuditValueEventArgs(Aop.AuditValueType.Insert, col, table.Properties[col.CsName], val);
-                    orm.Aop.AuditValue(sender, auditArgs);
-                    if (auditArgs.IsChanged)
+                    orm.Aop.AuditValueHandler(sender, auditArgs);
+                    if (auditArgs.ValueIsChanged)
                     {
-                        col.SetMapValue(data, val = auditArgs.Value);
+                        col.SetValue(data, val = auditArgs.Value);
                         if (changedDict != null && changedDict.ContainsKey(col.Attribute.Name) == false)
                             changedDict.Add(col.Attribute.Name, true);
                     }
                 }
+                if (col.Attribute.IsPrimary)
+                {
+                    val = col.GetDbValue(data);
+                    if (col.Attribute.MapType.NullableTypeOrThis() == typeof(Guid) && (val == null || (Guid)val == Guid.Empty))
+                        col.SetValue(data, val = FreeUtil.NewMongodbId());
+                    else if (col.CsType.NullableTypeOrThis() == typeof(Guid))
+                    {
+                        val = col.GetValue(data);
+                        if (val == null || (Guid)val == Guid.Empty)
+                            col.SetValue(data, val = FreeUtil.NewMongodbId());
+                    }
+                }
+                if (val == null && col.Attribute.MapType == typeof(string) && col.Attribute.IsNullable == false)
+                    col.SetValue(data, val = "");
+                if (col.Attribute.MapType == typeof(byte[]) && (val == null || (val is byte[] bytes && bytes.Length == 0)) && col.Attribute.IsVersion)
+                    col.SetValue(data, val = Utils.GuidToBytes(Guid.NewGuid()));
             }
         }
 
@@ -179,6 +198,7 @@ namespace FreeSql.Internal.CommonProvider
             if (_noneParameter == false)
             {
                 var colSum = _table.Columns.Count - _ignore.Count;
+                if (colSum <= 0) colSum = 1;
                 takeMax = parameterLimit / colSum;
                 if (takeMax > valuesLimit) takeMax = valuesLimit;
             }
@@ -201,42 +221,69 @@ namespace FreeSql.Internal.CommonProvider
             }
             if (ss.Length == 1)
             {
+                _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, 1, 1));
                 ret = this.RawExecuteAffrows();
                 ClearData();
                 return ret;
             }
             if (_transaction == null)
-                this.WithTransaction(_orm.Ado.TransactionCurrentThread);
-
-            if (_transaction != null || _batchAutoTransaction == false)
             {
-                for (var a = 0; a < ss.Length; a++)
+                var threadTransaction = _orm.Ado.TransactionCurrentThread;
+                if (threadTransaction != null) this.WithTransaction(threadTransaction);
+            }
+
+            var before = new Aop.TraceBeforeEventArgs("SplitExecuteAffrows", null);
+            _orm.Aop.TraceBeforeHandler?.Invoke(this, before);
+            Exception exception = null;
+            try
+            {
+                if (_transaction != null || _batchAutoTransaction == false)
                 {
-                    _source = ss[a];
-                    ret += this.RawExecuteAffrows();
+                    for (var a = 0; a < ss.Length; a++)
+                    {
+                        _source = ss[a];
+                        _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, a + 1, ss.Length));
+                        ret += this.RawExecuteAffrows();
+                    }
+                }
+                else
+                {
+                    if (_orm.Ado.MasterPool == null) throw new Exception("Ado.MasterPool 值为 null，该操作无法自启用事务，请显式传递【事务对象】解决");
+                    using (var conn = _orm.Ado.MasterPool.Get())
+                    {
+                        _transaction = conn.Value.BeginTransaction();
+                        var transBefore = new Aop.TraceBeforeEventArgs("BeginTransaction", null);
+                        _orm.Aop.TraceBeforeHandler?.Invoke(this, transBefore);
+                        try
+                        {
+                            for (var a = 0; a < ss.Length; a++)
+                            {
+                                _source = ss[a];
+                                _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, a + 1, ss.Length));
+                                ret += this.RawExecuteAffrows();
+                            }
+                            _transaction.Commit();
+                            _orm.Aop.TraceAfterHandler?.Invoke(this, new Aop.TraceAfterEventArgs(transBefore, "提交", null));
+                        }
+                        catch (Exception ex)
+                        {
+                            _transaction.Rollback();
+                            _orm.Aop.TraceAfterHandler?.Invoke(this, new Aop.TraceAfterEventArgs(transBefore, "回滚", ex));
+                            throw;
+                        }
+                        _transaction = null;
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                using (var conn = _orm.Ado.MasterPool.Get())
-                {
-                    _transaction = conn.Value.BeginTransaction();
-                    try
-                    {
-                        for (var a = 0; a < ss.Length; a++)
-                        {
-                            _source = ss[a];
-                            ret += this.RawExecuteAffrows();
-                        }
-                        _transaction.Commit();
-                    }
-                    catch
-                    {
-                        _transaction.Rollback();
-                        throw;
-                    }
-                    _transaction = null;
-                }
+                exception = ex;
+                throw;
+            }
+            finally
+            {
+                var after = new Aop.TraceAfterEventArgs(before, null, exception);
+                _orm.Aop.TraceAfterHandler?.Invoke(this, after);
             }
             ClearData();
             return ret;
@@ -253,44 +300,71 @@ namespace FreeSql.Internal.CommonProvider
             }
             if (ss.Length == 1)
             {
+                _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, 1, 1));
                 ret = this.RawExecuteIdentity();
                 ClearData();
                 return ret;
             }
             if (_transaction == null)
-                this.WithTransaction(_orm.Ado.TransactionCurrentThread);
-
-            if (_transaction != null || _batchAutoTransaction == false)
             {
-                for (var a = 0; a < ss.Length; a++)
+                var threadTransaction = _orm.Ado.TransactionCurrentThread;
+                if (threadTransaction != null) this.WithTransaction(threadTransaction);
+            }
+
+            var before = new Aop.TraceBeforeEventArgs("SplitExecuteIdentity", null);
+            _orm.Aop.TraceBeforeHandler?.Invoke(this, before);
+            Exception exception = null;
+            try
+            {
+                if (_transaction != null || _batchAutoTransaction == false)
                 {
-                    _source = ss[a];
-                    if (a < ss.Length - 1) this.RawExecuteAffrows();
-                    else ret = this.RawExecuteIdentity();
+                    for (var a = 0; a < ss.Length; a++)
+                    {
+                        _source = ss[a];
+                        _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, a + 1, ss.Length));
+                        if (a < ss.Length - 1) this.RawExecuteAffrows();
+                        else ret = this.RawExecuteIdentity();
+                    }
+                }
+                else
+                {
+                    if (_orm.Ado.MasterPool == null) throw new Exception("Ado.MasterPool 值为 null，该操作无法自启用事务，请显式传递【事务对象】解决");
+                    using (var conn = _orm.Ado.MasterPool.Get())
+                    {
+                        _transaction = conn.Value.BeginTransaction();
+                        var transBefore = new Aop.TraceBeforeEventArgs("BeginTransaction", null);
+                        _orm.Aop.TraceBeforeHandler?.Invoke(this, transBefore);
+                        try
+                        {
+                            for (var a = 0; a < ss.Length; a++)
+                            {
+                                _source = ss[a];
+                                _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, a + 1, ss.Length));
+                                if (a < ss.Length - 1) this.RawExecuteAffrows();
+                                else ret = this.RawExecuteIdentity();
+                            }
+                            _transaction.Commit();
+                            _orm.Aop.TraceAfterHandler?.Invoke(this, new Aop.TraceAfterEventArgs(transBefore, "提交", null));
+                        }
+                        catch (Exception ex)
+                        {
+                            _transaction.Rollback();
+                            _orm.Aop.TraceAfterHandler?.Invoke(this, new Aop.TraceAfterEventArgs(transBefore, "回滚", ex));
+                            throw;
+                        }
+                        _transaction = null;
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                using (var conn = _orm.Ado.MasterPool.Get())
-                {
-                    _transaction = conn.Value.BeginTransaction();
-                    try
-                    {
-                        for (var a = 0; a < ss.Length; a++)
-                        {
-                            _source = ss[a];
-                            if (a < ss.Length - 1) this.RawExecuteAffrows();
-                            else ret = this.RawExecuteIdentity();
-                        }
-                        _transaction.Commit();
-                    }
-                    catch
-                    {
-                        _transaction.Rollback();
-                        throw;
-                    }
-                    _transaction = null;
-                }
+                exception = ex;
+                throw;
+            }
+            finally
+            {
+                var after = new Aop.TraceAfterEventArgs(before, null, exception);
+                _orm.Aop.TraceAfterHandler?.Invoke(this, after);
             }
             ClearData();
             return ret;
@@ -307,42 +381,69 @@ namespace FreeSql.Internal.CommonProvider
             }
             if (ss.Length == 1)
             {
+                _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, 1, 1));
                 ret = this.RawExecuteInserted();
                 ClearData();
                 return ret;
             }
             if (_transaction == null)
-                this.WithTransaction(_orm.Ado.TransactionCurrentThread);
-
-            if (_transaction != null || _batchAutoTransaction == false)
             {
-                for (var a = 0; a < ss.Length; a++)
+                var threadTransaction = _orm.Ado.TransactionCurrentThread;
+                if (threadTransaction != null) this.WithTransaction(threadTransaction);
+            }
+
+            var before = new Aop.TraceBeforeEventArgs("SplitExecuteInserted", null);
+            _orm.Aop.TraceBeforeHandler?.Invoke(this, before);
+            Exception exception = null;
+            try
+            {
+                if (_transaction != null || _batchAutoTransaction == false)
                 {
-                    _source = ss[a];
-                    ret.AddRange(this.RawExecuteInserted());
+                    for (var a = 0; a < ss.Length; a++)
+                    {
+                        _source = ss[a];
+                        _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, a + 1, ss.Length));
+                        ret.AddRange(this.RawExecuteInserted());
+                    }
+                }
+                else
+                {
+                    if (_orm.Ado.MasterPool == null) throw new Exception("Ado.MasterPool 值为 null，该操作无法自启用事务，请显式传递【事务对象】解决");
+                    using (var conn = _orm.Ado.MasterPool.Get())
+                    {
+                        _transaction = conn.Value.BeginTransaction();
+                        var transBefore = new Aop.TraceBeforeEventArgs("BeginTransaction", null);
+                        _orm.Aop.TraceBeforeHandler?.Invoke(this, transBefore);
+                        try
+                        {
+                            for (var a = 0; a < ss.Length; a++)
+                            {
+                                _source = ss[a];
+                                _batchProgress?.Invoke(new BatchProgressStatus<T1>(_source, a + 1, ss.Length));
+                                ret.AddRange(this.RawExecuteInserted());
+                            }
+                            _transaction.Commit();
+                            _orm.Aop.TraceAfterHandler?.Invoke(this, new Aop.TraceAfterEventArgs(transBefore, "提交", null));
+                        }
+                        catch (Exception ex)
+                        {
+                            _transaction.Rollback();
+                            _orm.Aop.TraceAfterHandler?.Invoke(this, new Aop.TraceAfterEventArgs(transBefore, "回滚", ex));
+                            throw;
+                        }
+                        _transaction = null;
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                using (var conn = _orm.Ado.MasterPool.Get())
-                {
-                    _transaction = conn.Value.BeginTransaction();
-                    try
-                    {
-                        for (var a = 0; a < ss.Length; a++)
-                        {
-                            _source = ss[a];
-                            ret.AddRange(this.RawExecuteInserted());
-                        }
-                        _transaction.Commit();
-                    }
-                    catch
-                    {
-                        _transaction.Rollback();
-                        throw;
-                    }
-                    _transaction = null;
-                }
+                exception = ex;
+                throw;
+            }
+            finally
+            {
+                var after = new Aop.TraceAfterEventArgs(before, null, exception);
+                _orm.Aop.TraceAfterHandler?.Invoke(this, after);
             }
             ClearData();
             return ret;
@@ -353,22 +454,22 @@ namespace FreeSql.Internal.CommonProvider
         {
             var sql = ToSql();
             var before = new Aop.CurdBeforeEventArgs(_table.Type, _table, Aop.CurdType.Insert, sql, _params);
-            _orm.Aop.CurdBefore?.Invoke(this, before);
+            _orm.Aop.CurdBeforeHandler?.Invoke(this, before);
             var affrows = 0;
             Exception exception = null;
             try
             {
-                affrows = _orm.Ado.ExecuteNonQuery(_connection, _transaction, CommandType.Text, sql, _params);
+                affrows = _orm.Ado.ExecuteNonQuery(_connection, _transaction, CommandType.Text, sql, _commandTimeout, _params);
             }
             catch (Exception ex)
             {
                 exception = ex;
-                throw ex;
+                throw;
             }
             finally
             {
                 var after = new Aop.CurdAfterEventArgs(before, exception, affrows);
-                _orm.Aop.CurdAfter?.Invoke(this, after);
+                _orm.Aop.CurdAfterHandler?.Invoke(this, after);
             }
             return affrows;
         }
@@ -380,19 +481,24 @@ namespace FreeSql.Internal.CommonProvider
         public abstract long ExecuteIdentity();
         public abstract List<T1> ExecuteInserted();
 
-        public IInsert<T1> IgnoreColumns(Expression<Func<T1, object>> columns)
+        public IInsert<T1> IgnoreColumns(Expression<Func<T1, object>> columns) => IgnoreColumns(_commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null));
+        public IInsert<T1> InsertColumns(Expression<Func<T1, object>> columns) => InsertColumns(_commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null));
+
+        public IInsert<T1> IgnoreColumns(string[] columns)
         {
-            var cols = _commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null).Distinct();
-            _ignore.Clear();
-            foreach (var col in cols) _ignore.Add(col, true);
-            return this;
-        }
-        public IInsert<T1> InsertColumns(Expression<Func<T1, object>> columns)
-        {
-            var cols = _commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null).ToDictionary(a => a, a => true);
+            var cols = columns.Distinct().ToDictionary(a => a);
             _ignore.Clear();
             foreach (var col in _table.Columns.Values)
-                if (cols.ContainsKey(col.Attribute.Name) == false && _auditValueChangedDict.ContainsKey(col.Attribute.Name) == false)
+                if (cols.ContainsKey(col.Attribute.Name) == true || cols.ContainsKey(col.CsName) == true)
+                    _ignore.Add(col.Attribute.Name, true);
+            return this;
+        }
+        public IInsert<T1> InsertColumns(string[] columns)
+        {
+            var cols = columns.Distinct().ToDictionary(a => a);
+            _ignore.Clear();
+            foreach (var col in _table.Columns.Values)
+                if (cols.ContainsKey(col.Attribute.Name) == false && cols.ContainsKey(col.CsName) == false && _auditValueChangedDict.ContainsKey(col.Attribute.Name) == false)
                     _ignore.Add(col.Attribute.Name, true);
             return this;
         }
@@ -424,17 +530,19 @@ namespace FreeSql.Internal.CommonProvider
             return this;
         }
 
-        public virtual string ToSql() => ToSqlValuesOrSelectUnionAll(true);
+        public virtual string ToSql() => ToSqlValuesOrSelectUnionAllExtension102(true, null, null);
 
-        public string ToSqlValuesOrSelectUnionAll(bool isValues = true)
+        public string ToSqlValuesOrSelectUnionAll(bool isValues = true) => ToSqlValuesOrSelectUnionAllExtension102(isValues, null, null);
+        public string ToSqlValuesOrSelectUnionAllExtension101(bool isValues, Action<object, int, StringBuilder> onrow) => ToSqlValuesOrSelectUnionAllExtension102(isValues, null, onrow);
+        public string ToSqlValuesOrSelectUnionAllExtension102(bool isValues, Action<object, int, StringBuilder> onrowPre, Action<object, int, StringBuilder> onrow)
         {
             if (_source == null || _source.Any() == false) return null;
             var sb = new StringBuilder();
-            sb.Append("INSERT INTO ").Append(_commonUtils.QuoteSqlName(TableRuleInvoke())).Append("(");
+            sb.Append("INSERT INTO ").Append(_commonUtils.QuoteSqlName(TableRuleInvoke())).Append('(');
             var colidx = 0;
             foreach (var col in _table.Columns.Values)
             {
-                if (col.Attribute.IsIdentity && _insertIdentity == false) continue;
+                if (col.Attribute.IsIdentity && _insertIdentity == false && string.IsNullOrEmpty(col.DbInsertValue)) continue;
                 if (col.Attribute.IsIdentity == false && _ignore.ContainsKey(col.Attribute.Name)) continue;
 
                 if (colidx > 0) sb.Append(", ");
@@ -442,7 +550,7 @@ namespace FreeSql.Internal.CommonProvider
                 ++colidx;
             }
             sb.Append(") ");
-            if (isValues) sb.Append(isValues ? "VALUES" : "SELECT ");
+            if (isValues) sb.Append("VALUES");
             _params = _noneParameter ? new DbParameter[0] : new DbParameter[colidx * _source.Count];
             var specialParams = new List<DbParameter>();
             var didx = 0;
@@ -450,10 +558,11 @@ namespace FreeSql.Internal.CommonProvider
             {
                 if (didx > 0) sb.Append(isValues ? ", " : " \r\nUNION ALL\r\n ");
                 sb.Append(isValues ? "(" : "SELECT ");
+                onrowPre?.Invoke(d, didx, sb);
                 var colidx2 = 0;
                 foreach (var col in _table.Columns.Values)
                 {
-                    if (col.Attribute.IsIdentity && _insertIdentity == false) continue;
+                    if (col.Attribute.IsIdentity && _insertIdentity == false && string.IsNullOrEmpty(col.DbInsertValue)) continue;
                     if (col.Attribute.IsIdentity == false && _ignore.ContainsKey(col.Attribute.Name)) continue;
 
                     if (colidx2 > 0) sb.Append(", ");
@@ -461,22 +570,22 @@ namespace FreeSql.Internal.CommonProvider
                         sb.Append(col.DbInsertValue);
                     else
                     {
-                        object val = col.GetMapValue(d);
-                        if (_noneParameter)
-                            sb.Append(_commonUtils.GetNoneParamaterSqlValue(specialParams, col.Attribute.MapType, val));
-                        else
-                        {
-                            sb.Append(_commonUtils.QuoteWriteParamter(col.Attribute.MapType, _commonUtils.QuoteParamterName($"{col.CsName}_{didx}")));
+                        object val = col.GetDbValue(d);
+                        if (val == null && col.Attribute.IsNullable == false) val = col.CsType == typeof(string) ? "" : Utils.GetDataReaderValue(col.CsType.NullableTypeOrThis(), null);//#384
+
+                        var colsql = _noneParameter ? _commonUtils.GetNoneParamaterSqlValue(specialParams, _noneParameterFlag, col, col.Attribute.MapType, val) :
+                            _commonUtils.QuoteWriteParamterAdapter(col.Attribute.MapType, _commonUtils.QuoteParamterName($"{col.CsName}_{didx}"));
+                        sb.Append(_commonUtils.RewriteColumn(col, colsql));
+                        if (_noneParameter == false)
                             _params[didx * colidx + colidx2] = _commonUtils.AppendParamter(null, $"{col.CsName}_{didx}", col, col.Attribute.MapType, val);
-                        }
                     }
                     ++colidx2;
                 }
-                if (isValues) sb.Append(")");
+                if (isValues) sb.Append(')');
+                onrow?.Invoke(d, didx, sb);
                 ++didx;
             }
-            if (_noneParameter && specialParams.Any())
-                _params = specialParams.ToArray();
+            if (_noneParameter && specialParams.Any()) _params = specialParams.ToArray();
             return sb.ToString();
         }
 
@@ -484,27 +593,37 @@ namespace FreeSql.Internal.CommonProvider
         {
             var dt = new DataTable();
             dt.TableName = TableRuleInvoke();
+            var dtCols = new List<NativeTuple<ColumnInfo, Type, bool>>();
             foreach (var col in _table.ColumnsByPosition)
             {
                 if (col.Attribute.IsIdentity && _insertIdentity == false) continue;
                 if (col.Attribute.IsIdentity == false && _ignore.ContainsKey(col.Attribute.Name)) continue;
-                dt.Columns.Add(col.Attribute.Name, col.Attribute.MapType);
+                dt.Columns.Add(col.Attribute.Name, col.Attribute.MapType.NullableTypeOrThis());
+                dtCols.Add(NativeTuple.Create(col, col.Attribute.MapType.NullableTypeOrThis(), col.Attribute.MapType.IsNullableType()));
             }
             if (dt.Columns.Count == 0) return dt;
+            var didx = 0;
             foreach (var d in _source)
             {
                 var row = new object[dt.Columns.Count];
                 var rowIndex = 0;
-                foreach (var col in _table.ColumnsByPosition)
+                foreach (var col in dtCols)
                 {
-                    if (col.Attribute.IsIdentity && _insertIdentity == false) continue;
-                    if (col.Attribute.IsIdentity == false && _ignore.ContainsKey(col.Attribute.Name)) continue;
-                    row[rowIndex++] = col.GetMapValue(d);
+                    var val = col.Item1.GetDbValue(d);
+                    if (col.Item3 == true)
+                    {
+                        //if (val == null) throw new Exception($"[{didx}].{col.Item1.CsName} 值不可为 null；DataTable 限制不可使用 int?/long? 可空类型，IInsert.ToDataTable 将映射成 int/long，因此不可接受 null 值");
+                        if (val == null)
+                            val = DBNull.Value;
+                        else
+                            val = Utils.GetDataReaderValue(col.Item2, val);
+                    }
+                    row[rowIndex++] = val;
                 }
                 dt.Rows.Add(row);
+                didx++;
             }
             return dt;
         }
     }
 }
-

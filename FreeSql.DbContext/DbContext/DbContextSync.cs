@@ -1,8 +1,9 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Linq.Expressions;
+using System.Reflection;
 
 namespace FreeSql
 {
@@ -26,60 +27,63 @@ namespace FreeSql
         }
         public virtual int SaveChanges()
         {
-            ExecCommand();
+            FlushCommand();
             return SaveChangesSuccess();
         }
 
-        static Dictionary<Type, Dictionary<string, Func<object, object[], int>>> _dicExecCommandDbContextBatch = new Dictionary<Type, Dictionary<string, Func<object, object[], int>>>();
-        bool isExecCommanding = false;
-        internal void ExecCommand()
+        static ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object[], int>>> _dicFlushCommandDbSetBatch = new ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object[], int>>>();
+        bool isFlushCommanding = false;
+        /// <summary>
+        /// 刷新队列中的命令
+        /// </summary>
+        internal void FlushCommand()
         {
-            if (isExecCommanding) return;
-            if (_actions.Any() == false) return;
-            isExecCommanding = true;
+            if (isFlushCommanding) return;
+            if (_prevCommands.Any() == false) return;
+            isFlushCommanding = true;
 
-            ExecCommandInfo oldinfo = null;
+            PrevCommandInfo oldinfo = null;
             var states = new List<object>();
+            var flagFuncUpdateLaststate = false;
 
-            Func<string, int> dbContextBatch = methodName =>
+            int dbsetBatch(string method)
             {
-                if (_dicExecCommandDbContextBatch.TryGetValue(oldinfo.stateType, out var trydic) == false)
-                    trydic = new Dictionary<string, Func<object, object[], int>>();
-                if (trydic.TryGetValue(methodName, out var tryfunc) == false)
-                {
-                    var arrType = oldinfo.stateType.MakeArrayType();
-                    var dbsetType = oldinfo.dbSet.GetType().BaseType;
-                    var dbsetTypeMethod = dbsetType.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { arrType }, null);
+                var tryfunc = _dicFlushCommandDbSetBatch
+                    .GetOrAdd(oldinfo.stateType, stateType => new ConcurrentDictionary<string, Func<object, object[], int>>())
+                    .GetOrAdd(method, methodName =>
+                    {
+                        var arrType = oldinfo.stateType.MakeArrayType();
+                        var dbsetType = oldinfo.dbSet.GetType().BaseType;
+                        var dbsetTypeMethod = dbsetType.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { arrType }, null);
 
-                    var returnTarget = Expression.Label(typeof(int));
-                    var parm1DbSet = Expression.Parameter(typeof(object));
-                    var parm2Vals = Expression.Parameter(typeof(object[]));
-                    var var1Vals = Expression.Variable(arrType);
-                    tryfunc = Expression.Lambda<Func<object, object[], int>>(Expression.Block(
-                        new[] { var1Vals },
-                        Expression.Assign(var1Vals, Expression.Convert(global::FreeSql.Internal.Utils.GetDataReaderValueBlockExpression(arrType, parm2Vals), arrType)),
-                        Expression.Return(returnTarget, Expression.Call(Expression.Convert(parm1DbSet, dbsetType), dbsetTypeMethod, var1Vals)),
-                        Expression.Label(returnTarget, Expression.Default(typeof(int)))
-                    ), new[] { parm1DbSet, parm2Vals }).Compile();
-                    trydic.Add(methodName, tryfunc);
-                }
+                        var returnTarget = Expression.Label(typeof(int));
+                        var parm1DbSet = Expression.Parameter(typeof(object));
+                        var parm2Vals = Expression.Parameter(typeof(object[]));
+                        var var1Vals = Expression.Variable(arrType);
+                        return Expression.Lambda<Func<object, object[], int>>(Expression.Block(
+                            new[] { var1Vals },
+                            Expression.Assign(var1Vals, Expression.Convert(global::FreeSql.Internal.Utils.GetDataReaderValueBlockExpression(arrType, parm2Vals), arrType)),
+                            Expression.Return(returnTarget, Expression.Call(Expression.Convert(parm1DbSet, dbsetType), dbsetTypeMethod, var1Vals)),
+                            Expression.Label(returnTarget, Expression.Default(typeof(int)))
+                        ), new[] { parm1DbSet, parm2Vals }).Compile();
+                    });
                 return tryfunc(oldinfo.dbSet, states.ToArray());
-            };
-            Action funcDelete = () =>
+            }
+            void funcDelete()
             {
-                _affrows += dbContextBatch("DbContextBatchRemove");
+                _affrows += dbsetBatch("DbContextBatchRemove");
+                states.Clear();
+            }
+            void funcInsert()
+            {
+                _affrows += dbsetBatch("DbContextBatchAdd");
                 states.Clear();
             };
-            Action funcInsert = () =>
-            {
-                _affrows += dbContextBatch("DbContextBatchAdd");
-                states.Clear();
-            };
-            Action<bool> funcUpdate = isLiveUpdate =>
+            void funcUpdate(bool isLiveUpdate)
             {
                 var affrows = 0;
-                if (isLiveUpdate) affrows = dbContextBatch("DbContextBatchUpdateNow");
-                else affrows = dbContextBatch("DbContextBatchUpdate");
+                if (isLiveUpdate) affrows = dbsetBatch("DbContextBatchUpdateNow");
+                else affrows = dbsetBatch("DbContextBatchUpdate");
                 if (affrows == -999)
                 { //最后一个元素已被删除
                     states.RemoveAt(states.Count - 1);
@@ -89,7 +93,11 @@ namespace FreeSql
                 { //没有执行更新
                     var laststate = states[states.Count - 1];
                     states.Clear();
-                    if (affrows == -997) states.Add(laststate); //保留最后一个
+                    if (affrows == -997)
+                    {
+                        flagFuncUpdateLaststate = true;
+                        states.Add(laststate); //保留最后一个
+                    }
                 }
                 if (affrows > 0)
                 {
@@ -97,17 +105,22 @@ namespace FreeSql
                     var islastNotUpdated = states.Count != affrows;
                     var laststate = states[states.Count - 1];
                     states.Clear();
-                    if (islastNotUpdated) states.Add(laststate); //保留最后一个
+                    if (islastNotUpdated)
+                    {
+                        flagFuncUpdateLaststate = true;
+                        states.Add(laststate); //保留最后一个
+                    }
                 }
             };
 
-            while (_actions.Any() || states.Any())
+            while (_prevCommands.Any() || states.Any())
             {
-                var info = _actions.Any() ? _actions.Dequeue() : null;
+                var info = _prevCommands.Any() ? _prevCommands.Dequeue() : null;
                 if (oldinfo == null) oldinfo = info;
                 var isLiveUpdate = false;
+                flagFuncUpdateLaststate = false;
 
-                if (_actions.Any() == false && states.Any() ||
+                if (_prevCommands.Any() == false && states.Any() ||
                     info != null && oldinfo.changeType != info.changeType ||
                     info != null && oldinfo.stateType != info.stateType ||
                     info != null && oldinfo.entityType != info.entityType)
@@ -142,9 +155,12 @@ namespace FreeSql
                 {
                     states.Add(info.state);
                     oldinfo = info;
+
+                    if (flagFuncUpdateLaststate && oldinfo.changeType == EntityChangeType.Update) //马上与上个元素比较
+                        funcUpdate(isLiveUpdate);
                 }
             }
-            isExecCommanding = false;
+            isFlushCommanding = false;
         }
     }
 }

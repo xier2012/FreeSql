@@ -1,10 +1,14 @@
 ﻿using FreeSql.Internal;
 using FreeSql.Internal.Model;
-using SafeObjectPool;
+using FreeSql.Internal.ObjectPool;
 using System;
 using System.Collections;
 using System.Data.Common;
+#if microsoft
+using Microsoft.Data.SqlClient;
+#else
 using System.Data.SqlClient;
+#endif
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -13,13 +17,15 @@ namespace FreeSql.SqlServer
 {
     class SqlServerAdo : FreeSql.Internal.CommonProvider.AdoProvider
     {
-        public SqlServerAdo() : base(DataType.SqlServer) { }
-        public SqlServerAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings, Func<DbConnection> connectionFactory) : base(DataType.SqlServer)
+        public SqlServerAdo() : base(DataType.SqlServer, null, null) { }
+        public SqlServerAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings, Func<DbConnection> connectionFactory) : base(DataType.SqlServer, masterConnectionString, slaveConnectionStrings)
         {
             base._util = util;
             if (connectionFactory != null)
             {
-                MasterPool = new FreeSql.Internal.CommonProvider.DbConnectionPool(DataType.SqlServer, connectionFactory);
+                var pool = new FreeSql.Internal.CommonProvider.DbConnectionPool(DataType.SqlServer, connectionFactory);
+                MasterPool = pool;
+                _CreateCommandConnection = pool.TestConnection;
                 return;
             }
             if (!string.IsNullOrEmpty(masterConnectionString))
@@ -51,7 +57,7 @@ namespace FreeSql.SqlServer
                 return string.Concat("N'", param.ToString().Replace("'", "''"), "'");
             }
             else if (param is char)
-                return string.Concat("'", param.ToString().Replace("'", "''"), "'");
+                return string.Concat("'", param.ToString().Replace("'", "''").Replace('\0', ' '), "'");
             else if (param is Enum)
                 return ((Enum)param).ToInt64();
             else if (decimal.TryParse(string.Concat(param), out var trydec))
@@ -76,18 +82,25 @@ namespace FreeSql.SqlServer
             return string.Concat("'", param.ToString().Replace("'", "''"), "'");
         }
 
-        protected override DbCommand CreateCommand()
+        DbConnection _CreateCommandConnection;
+        public override DbCommand CreateCommand()
         {
+            if (_CreateCommandConnection != null)
+            {
+                var cmd = _CreateCommandConnection.CreateCommand();
+                cmd.Connection = null;
+                return cmd;
+            }
             return new SqlCommand();
         }
 
-        protected override void ReturnConnection(IObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
+        public override void ReturnConnection(IObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
         {
             var rawPool = pool as SqlServerConnectionPool;
             if (rawPool != null) rawPool.Return(conn, ex);
             else pool.Return(conn);
         }
 
-        protected override DbParameter[] GetDbParamtersByObject(string sql, object obj) => _util.GetDbParamtersByObject(sql, obj);
+        public override DbParameter[] GetDbParamtersByObject(string sql, object obj) => _util.GetDbParamtersByObject(sql, obj);
     }
 }

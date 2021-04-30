@@ -3,6 +3,7 @@ using FreeSql.Tests.DataContext.SqlServer;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
 using Xunit;
@@ -11,6 +12,402 @@ namespace FreeSql.Tests.SqlServer
 {
     public class SqlServerCodeFirstTest
     {
+        [Fact]
+        public void GeographyCrud()
+        {
+            var fsql = g.sqlserver;
+            fsql.Delete<ts_geocrud01>().Where("1=1").ExecuteAffrows();
+            var id1 = Guid.NewGuid();
+            var geo1 = "LINESTRING (-122.36 47.656, -122.343 47.656)";
+            Assert.Equal(1, fsql.Insert(new ts_geocrud01 { id = id1, geo = geo1 }).ExecuteAffrows());
+            var item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            //NoneParameter
+            fsql.Delete<ts_geocrud01>().Where("1=1").ExecuteAffrows();
+            id1 = Guid.NewGuid();
+            geo1 = "LINESTRING (-122.36 47.656, -122.343 47.656)";
+            Assert.Equal(1, fsql.Insert(new ts_geocrud01 { id = id1, geo = geo1 }).NoneParameter().ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            var item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            var item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            var item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            var item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            var item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //Update SetSource
+            geo1 = "COMPOUNDCURVE (CIRCULARSTRING (-122.358 47.653, -122.348 47.649, -122.348 47.658), CIRCULARSTRING (-122.348 47.658, -122.358 47.658, -122.358 47.653))";
+            item1.geo = geo1;
+            Assert.Equal(1, fsql.Update<ts_geocrud01>().SetSource(item1).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //Update SetSource NoneParameter
+            geo1 = "COMPOUNDCURVE (CIRCULARSTRING (-122.358 47.653, -122.348 47.649, -122.348 47.658), CIRCULARSTRING (-122.348 47.658, -122.358 47.658, -122.358 47.653))";
+            item1.geo = geo1;
+            Assert.Equal(1, fsql.Update<ts_geocrud01>().SetSource(item1).NoneParameter().ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //Update Set
+            geo1 = "POLYGON ((-122.358 47.653, -122.348 47.649, -122.348 47.658, -122.358 47.658, -122.358 47.653))";
+            Assert.Equal(1, fsql.Update<ts_geocrud01>().Where(a => a.id == id1).Set(a => a.geo, geo1).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //Update Set NoneParameter
+            geo1 = "POLYGON ((-122.358 47.653, -122.348 47.649, -122.348 47.658, -122.358 47.658, -122.358 47.653))";
+            Assert.Equal(1, fsql.Update<ts_geocrud01>().NoneParameter().Where(a => a.id == id1).Set(a => a.geo, geo1).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //Update Set Multi
+            geo1 = "LINESTRING (-122.36 47.656, -122.343 47.656)";
+            Assert.Equal(1, fsql.Update<ts_geocrud01>().Where(a => a.id == id1).Set(a => new
+            {
+                geo = geo1
+            }).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //Update Set Multi NoneParameter
+            geo1 = "LINESTRING (-122.36 47.656, -122.343 47.656)";
+            Assert.Equal(1, fsql.Update<ts_geocrud01>().NoneParameter().Where(a => a.id == id1).Set(a => new
+            {
+                geo = geo1
+            }).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First();
+            Assert.NotNull(item1);
+            Assert.Equal(id1, item1.id);
+            Assert.Equal(geo1, item1.geo);
+
+            item2 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => a.geo);
+            Assert.Equal(geo1, item2);
+            item3 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new { a.geo });
+            Assert.Equal(geo1, item3.geo);
+            item4 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocrud01 { geo = a.geo });
+            Assert.Equal(geo1, item4.geo);
+            item5 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).ToList<ts_geocurd01_dto1>().FirstOrDefault();
+            Assert.Equal(geo1, item5.geo);
+            item6 = fsql.Select<ts_geocrud01>().Where(a => a.id == id1).First(a => new ts_geocurd01_dto1 { geo = a.geo });
+            Assert.Equal(geo1, item6.geo);
+
+            //批量
+            fsql.Delete<ts_geocrud01>().Where("1=1").ExecuteAffrows();
+            id1 = Guid.NewGuid();
+            geo1 = "LINESTRING (-122.36 47.656, -122.343 47.656)";
+            var id2 = Guid.NewGuid();
+            var geo2 = "POLYGON ((-122.358 47.653, -122.348 47.649, -122.348 47.658, -122.358 47.658, -122.358 47.653))";
+            Assert.Equal(2, fsql.Insert(new[] { new ts_geocrud01 { id = id1, geo = geo1 }, new ts_geocrud01 { id = id2, geo = geo2 } }).ExecuteAffrows());
+            var items = fsql.Select<ts_geocrud01>().ToList();
+            Assert.Equal(2, items.Count);
+
+            items[0].geo = "POLYGON EMPTY";
+            items[1].geo = "LINESTRING (0 0, 2 2, 1 0)";
+            Assert.Equal(2, fsql.Update<ts_geocrud01>().SetSource(items).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == items[0].id).First();
+            Assert.NotNull(item1);
+            Assert.Equal(items[0].id, item1.id);
+            Assert.Equal(items[0].geo, item1.geo);
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == items[1].id).First();
+            Assert.NotNull(item1);
+            Assert.Equal(items[1].id, item1.id);
+            Assert.Equal(items[1].geo, item1.geo);
+
+            //批量 NoneParameter
+            fsql.Delete<ts_geocrud01>().Where("1=1").ExecuteAffrows();
+            id1 = Guid.NewGuid();
+            geo1 = "LINESTRING (-122.36 47.656, -122.343 47.656)";
+            id2 = Guid.NewGuid();
+            geo2 = "POLYGON ((-122.358 47.653, -122.348 47.649, -122.348 47.658, -122.358 47.658, -122.358 47.653))";
+            Assert.Equal(2, fsql.Insert(new[] { new ts_geocrud01 { id = id1, geo = geo1 }, new ts_geocrud01 { id = id2, geo = geo2 } }).NoneParameter().ExecuteAffrows());
+            items = fsql.Select<ts_geocrud01>().ToList();
+            Assert.Equal(2, items.Count);
+
+            items[0].geo = "POLYGON EMPTY";
+            items[1].geo = "LINESTRING (0 0, 2 2, 1 0)";
+            Assert.Equal(2, fsql.Update<ts_geocrud01>().NoneParameter().SetSource(items).ExecuteAffrows());
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == items[0].id).First();
+            Assert.NotNull(item1);
+            Assert.Equal(items[0].id, item1.id);
+            Assert.Equal(items[0].geo, item1.geo);
+            item1 = fsql.Select<ts_geocrud01>().Where(a => a.id == items[1].id).First();
+            Assert.NotNull(item1);
+            Assert.Equal(items[1].id, item1.id);
+            Assert.Equal(items[1].geo, item1.geo);
+        }
+        class ts_geocrud01
+        {
+            public Guid id { get; set; }
+            [Column(DbType = "geography", RewriteSql = "geography::STGeomFromText({0},4236)", RereadSql = "{0}.STAsText()")]
+            public string geo { get; set; }
+        }
+        class ts_geocurd01_dto1
+        {
+            public string geo { get; set; }
+        }
+
+        [Fact]
+        public void InsertUpdateParameter()
+        {
+            var fsql = g.sqlserver;
+            fsql.CodeFirst.SyncStructure<ts_iupstr_bak>();
+            var item = new ts_iupstr { id = Guid.NewGuid(), title = string.Join(",", Enumerable.Range(0, 2000).Select(a => "我是中国人")) };
+            Assert.Equal(1, fsql.Insert(item).ExecuteAffrows());
+            var find = fsql.Select<ts_iupstr>().Where(a => a.id == item.id).First();
+            Assert.NotNull(find);
+            Assert.Equal(find.id, item.id);
+            Assert.Equal(find.title, item.title);
+        }
+        [Table(Name = "ts_iupstr_bak", DisableSyncStructure = true)]
+        class ts_iupstr
+        {
+            public Guid id { get; set; }
+            public string title { get; set; }
+        }
+        class ts_iupstr_bak
+        {
+            public Guid id { get; set; }
+            [Column(StringLength = -1)]
+            public string title { get; set; }
+        }
+
+        [Fact] 
+        public void EnumStartValue1()
+        {
+            var fsql = g.sqlserver;
+            fsql.Delete<TS_ESV1>().Where("1=1").ExecuteAffrows();
+
+            var repo = fsql.GetRepository<TS_ESV1>();
+            var item1 = repo.Insert(new TS_ESV1 { Status = TS_TSV1_Status.Status1 });
+            Assert.True(fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status1, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status1, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First(a => a.Status));
+            Assert.True(repo.Select.Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status1, repo.Select.Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status1, repo.Select.Where(a => a.Id == item1.Id).First(a => a.Status));
+
+            Assert.Equal($"UPDATE [TS_ESV1] SET [Status] = 1 WHERE ([Id] = '{item1.Id}')", fsql.Update<TS_ESV1>().Where(a => a.Id == item1.Id).NoneParameter().Set(a => a.Status, TS_TSV1_Status.Status1).ToSql().Replace("\r\n", ""));
+            Assert.Equal($"UPDATE [TS_ESV1] SET [Status] = 3 WHERE ([Id] = '{item1.Id}')", fsql.Update<TS_ESV1>().Where(a => a.Id == item1.Id).NoneParameter().Set(a => a.Status, TS_TSV1_Status.Status2).ToSql().Replace("\r\n", ""));
+            Assert.Equal($"UPDATE [TS_ESV1] SET [Status] = 5 WHERE ([Id] = '{item1.Id}')", fsql.Update<TS_ESV1>().Where(a => a.Id == item1.Id).NoneParameter().Set(a => a.Status, TS_TSV1_Status.Status3).ToSql().Replace("\r\n", ""));
+            Assert.Equal($"UPDATE [TS_ESV1] SET [Status] = 1 WHERE ([Id] = '{item1.Id}')", fsql.Update<TS_ESV1>().Where(a => a.Id == item1.Id).NoneParameter().Set(a => a.Status == TS_TSV1_Status.Status1).ToSql().Replace("\r\n", ""));
+            Assert.Equal($"UPDATE [TS_ESV1] SET [Status] = 3 WHERE ([Id] = '{item1.Id}')", fsql.Update<TS_ESV1>().Where(a => a.Id == item1.Id).NoneParameter().Set(a => a.Status == TS_TSV1_Status.Status2).ToSql().Replace("\r\n", ""));
+            Assert.Equal($"UPDATE [TS_ESV1] SET [Status] = 5 WHERE ([Id] = '{item1.Id}')", fsql.Update<TS_ESV1>().Where(a => a.Id == item1.Id).NoneParameter().Set(a => a.Status == TS_TSV1_Status.Status3).ToSql().Replace("\r\n", ""));
+
+            item1.Status = TS_TSV1_Status.Status1;
+            repo.Update(item1);
+            Assert.True(fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status1, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status1, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First(a => a.Status));
+            Assert.True(repo.Select.Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status1, repo.Select.Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status1, repo.Select.Where(a => a.Id == item1.Id).First(a => a.Status));
+
+            item1.Status = TS_TSV1_Status.Status2;
+            repo.Update(item1);
+            Assert.True(fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status2, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status2, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First(a => a.Status));
+            Assert.True(repo.Select.Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status2, repo.Select.Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status2, repo.Select.Where(a => a.Id == item1.Id).First(a => a.Status));
+
+            item1.Status = TS_TSV1_Status.Status3;
+            repo.Update(item1);
+            Assert.True(fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status3, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status3, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First(a => a.Status));
+            Assert.True(repo.Select.Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status3, repo.Select.Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status3, repo.Select.Where(a => a.Id == item1.Id).First(a => a.Status));
+
+            item1.Status = TS_TSV1_Status.Status3;
+            fsql.GetRepository<TS_ESV1>().Update(item1);
+            Assert.True(fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status3, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status3, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First(a => a.Status));
+            Assert.True(repo.Select.Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status3, repo.Select.Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status3, repo.Select.Where(a => a.Id == item1.Id).First(a => a.Status));
+
+            item1.Status = TS_TSV1_Status.Status2;
+            fsql.GetRepository<TS_ESV1>().Update(item1);
+            Assert.True(fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status2, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status2, fsql.Select<TS_ESV1>().Where(a => a.Id == item1.Id).First(a => a.Status));
+            Assert.True(repo.Select.Where(a => a.Id == item1.Id).Any());
+            Assert.Equal(TS_TSV1_Status.Status2, repo.Select.Where(a => a.Id == item1.Id).First().Status);
+            Assert.Equal(TS_TSV1_Status.Status2, repo.Select.Where(a => a.Id == item1.Id).First(a => a.Status));
+        }
+        public class TS_ESV1
+        {
+            public Guid Id { get; set; }
+            public TS_TSV1_Status Status { get; set; }
+        }
+        public enum TS_TSV1_Status
+        {
+            Status1 = 1,
+            Status2 = 3,
+            Status3 = 5
+        }
+
+        [Fact]
+        public void Blob()
+        {
+            var str1 = string.Join(",", Enumerable.Range(0, 10000).Select(a => "我是中国人"));
+            var data1 = Encoding.UTF8.GetBytes(str1);
+
+            var item1 = new TS_BLB01 { Data = data1 };
+            Assert.Equal(1, g.sqlserver.Insert(item1).ExecuteAffrows());
+
+            var item2 = g.sqlserver.Select<TS_BLB01>().Where(a => a.Id == item1.Id).First();
+            Assert.Equal(item1.Data.Length, item2.Data.Length);
+
+            var str2 = Encoding.UTF8.GetString(item2.Data);
+            Assert.Equal(str1, str2);
+
+            //NoneParameter
+            item1 = new TS_BLB01 { Data = data1 };
+            Assert.Equal(1, g.sqlserver.Insert<TS_BLB01>().NoneParameter().AppendData(item1).ExecuteAffrows());
+
+            item2 = g.sqlserver.Select<TS_BLB01>().Where(a => a.Id == item1.Id).First();
+            Assert.Equal(item1.Data.Length, item2.Data.Length);
+
+            str2 = Encoding.UTF8.GetString(item2.Data);
+            Assert.Equal(str1, str2);
+        }
+        class TS_BLB01
+        {
+            public Guid Id { get; set; }
+            [MaxLength(-1)]
+            public byte[] Data { get; set; }
+        }
+
+        [Fact]
+        public void StringLength()
+        {
+            var dll = g.sqlserver.CodeFirst.GetComparisonDDLStatements<TS_SLTB>();
+            g.sqlserver.CodeFirst.SyncStructure<TS_SLTB>();
+        }
+        class TS_SLTB
+        {
+            public Guid Id { get; set; }
+            [Column(StringLength = 50)]
+            public string Title { get; set; }
+
+            [Column(IsNullable = false, StringLength = 50)]
+            public string TitleSub { get; set; }
+        }
+
+        [Fact]
+        public void 表名中有点()
+        {
+            var item = new tbdot01 { name = "insert" };
+            g.sqlserver.Insert(item).ExecuteAffrows();
+
+            var find = g.sqlserver.Select<tbdot01>().Where(a => a.id == item.id).First();
+            Assert.NotNull(find);
+            Assert.Equal(item.id, find.id);
+            Assert.Equal("insert", find.name);
+
+            Assert.Equal(1, g.sqlserver.Update<tbdot01>().Set(a => a.name == "update").Where(a => a.id == item.id).ExecuteAffrows());
+            find = g.sqlserver.Select<tbdot01>().Where(a => a.id == item.id).First();
+            Assert.NotNull(find);
+            Assert.Equal(item.id, find.id);
+            Assert.Equal("update", find.name);
+
+            Assert.Equal(1, g.sqlserver.Delete<tbdot01>().Where(a => a.id == item.id).ExecuteAffrows());
+            find = g.sqlserver.Select<tbdot01>().Where(a => a.id == item.id).First();
+            Assert.Null(find);
+        }
+        /// <summary>
+        /// 表中带点
+        /// </summary>
+        [Table(Name = "[freesql.T].[dbo].[sys.tbdot01]")]
+        class tbdot01
+        {
+            /// <summary>
+            /// 主键
+            /// </summary>
+            public Guid id { get; set; }
+            public string name { get; set; }
+        }
 
         [Fact]
         public void 中文表_字段()
@@ -26,6 +423,28 @@ namespace FreeSql.Tests.SqlServer
             Assert.Equal(1, g.sqlserver.Insert<测试中文表>().AppendData(item).ExecuteAffrows());
             Assert.NotEqual(Guid.Empty, item.编号);
             var item2 = g.sqlserver.Select<测试中文表>().Where(a => a.编号 == item.编号).First();
+            Assert.NotNull(item2);
+            Assert.Equal(item.编号, item2.编号);
+            Assert.Equal(item.标题, item2.标题);
+
+            item.标题 = "测试标题更新";
+            Assert.Equal(1, g.sqlserver.Update<测试中文表>().SetSource(item).ExecuteAffrows());
+            item2 = g.sqlserver.Select<测试中文表>().Where(a => a.编号 == item.编号).First();
+            Assert.NotNull(item2);
+            Assert.Equal(item.编号, item2.编号);
+            Assert.Equal(item.标题, item2.标题);
+
+            item.标题 = "测试标题更新_repo";
+            var repo = g.sqlserver.GetRepository<测试中文表>();
+            Assert.Equal(1, repo.Update(item));
+            item2 = g.sqlserver.Select<测试中文表>().Where(a => a.编号 == item.编号).First();
+            Assert.NotNull(item2);
+            Assert.Equal(item.编号, item2.编号);
+            Assert.Equal(item.标题, item2.标题);
+
+            item.标题 = "测试标题更新_repo22";
+            Assert.Equal(1, repo.Update(item));
+            item2 = g.sqlserver.Select<测试中文表>().Where(a => a.编号 == item.编号).First();
             Assert.NotNull(item2);
             Assert.Equal(item.编号, item2.编号);
             Assert.Equal(item.标题, item2.标题);
@@ -50,6 +469,7 @@ namespace FreeSql.Tests.SqlServer
         {
             var sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<AddUniquesInfo>();
             g.sqlserver.CodeFirst.SyncStructure<AddUniquesInfo>();
+            g.sqlserver.CodeFirst.SyncStructure(typeof(AddUniquesInfo), "AddUniquesInfo1");
         }
         [Table(Name = "AddUniquesInfo", OldName = "AddUniquesInfo2")]
         [Index("uk_phone", "phone", true)]
@@ -97,9 +517,8 @@ namespace FreeSql.Tests.SqlServer
         [Fact]
         public void GetComparisonDDLStatements()
         {
-
             var sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<TableAllType>();
-
+            Assert.True(string.IsNullOrEmpty(sql)); //测试运行两次后
             sql = g.sqlserver.CodeFirst.GetComparisonDDLStatements<Tb_alltype>();
         }
 
@@ -144,7 +563,8 @@ namespace FreeSql.Tests.SqlServer
                 testFieldSByteNullable = sbyte.MinValue,
                 testFieldShort = short.MaxValue,
                 testFieldShortNullable = short.MinValue,
-                testFieldString = "我是中国人string",
+                testFieldString = "我是中国人string'\\?!@#$%^&*()_+{}}{~?><<>",
+                testFieldChar = 'X',
                 testFieldTimeSpan = TimeSpan.FromSeconds(999),
                 testFieldTimeSpanNullable = TimeSpan.FromSeconds(30),
                 testFieldUInt = uint.MaxValue,
@@ -163,9 +583,17 @@ namespace FreeSql.Tests.SqlServer
             var sqlTestUpdate = g.sqlserver.Update<TableAllType>().SetSource(item3NP).NoneParameter().ToSql();
 
             var item3 = insert.AppendData(item2).ExecuteInserted();
-            var newitem2 = select.Where(a => a.Id == item3NP[0].Id).ToOne();
+            var newitem2 = select.Where(a => a.Id == item3[0].Id).ToOne();
+            Assert.Equal(item2.testFieldString, newitem2.testFieldString);
+            Assert.Equal(item2.testFieldChar, newitem2.testFieldChar);
+
+            item3 = insert.NoneParameter().AppendData(item2).ExecuteInserted();
+            newitem2 = select.Where(a => a.Id == item3[0].Id).ToOne();
+            Assert.Equal(item2.testFieldString, newitem2.testFieldString);
+            Assert.Equal(item2.testFieldChar, newitem2.testFieldChar);
 
             var items = select.ToList();
+            var itemstb = select.ToDataTable();
         }
 
         [JsonObject(MemberSerialization.OptIn), Table(Name = "dbo.tb_alltype")]
@@ -292,6 +720,10 @@ namespace FreeSql.Tests.SqlServer
             public string TestFieldString { get; set; }
 
 
+            [JsonProperty, Column(Name = "testFieldChar", DbType = "char(1)", IsNullable = true)]
+            public char testFieldChar { get; set; }
+
+
             [JsonProperty, Column(Name = "testFieldTimeSpan", DbType = "time")]
             public TimeSpan TestFieldTimeSpan { get; set; }
 
@@ -356,6 +788,7 @@ namespace FreeSql.Tests.SqlServer
 
             public byte[] testFieldBytes { get; set; }
             public string testFieldString { get; set; }
+            public char testFieldChar { get; set; }
             public Guid testFieldGuid { get; set; }
 
             public bool? testFieldBoolNullable { get; set; }

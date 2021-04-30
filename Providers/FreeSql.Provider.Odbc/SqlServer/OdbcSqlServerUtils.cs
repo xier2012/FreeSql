@@ -1,9 +1,11 @@
 ﻿using FreeSql.Internal;
+using FreeSql.Internal.CommonProvider;
 using FreeSql.Internal.Model;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.Odbc;
+using System.Globalization;
 using System.Text;
 
 namespace FreeSql.Odbc.SqlServer
@@ -62,7 +64,7 @@ namespace FreeSql.Odbc.SqlServer
             return $"{nametrim.TrimStart('[').TrimEnd(']').Replace("].[", ".").Replace(".[", ".")}";
         }
         public override string[] SplitTableName(string name) => GetSplitTableNames(name, '[', ']', 3);
-        public override string QuoteParamterName(string name) => $"@{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
+        public override string QuoteParamterName(string name) => $"@{name}";
         public override string IsNull(string sql, object value) => $"isnull({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types)
         {
@@ -72,7 +74,8 @@ namespace FreeSql.Odbc.SqlServer
             {
                 if (types[a] == typeof(string)) news[a] = objs[a];
                 else if (types[a].NullableTypeOrThis() == typeof(Guid)) news[a] = $"cast({objs[a]} as char(36))";
-                else news[a] = $"cast({objs[a]} as nvarchar)";
+                else if (types[a].IsNumberType()) news[a] = $"cast({objs[a]} as varchar)";
+                else news[a] = $"cast({objs[a]} as nvarchar(max))";
             }
             return string.Join(" + ", news);
         }
@@ -81,19 +84,20 @@ namespace FreeSql.Odbc.SqlServer
         public override string Now => "getdate()";
         public override string NowUtc => "getutcdate()";
 
-        public override string QuoteWriteParamter(Type type, string paramterName) => paramterName;
-        public override string QuoteReadColumn(Type type, Type mapType, string columnName) => columnName;
+        public override string QuoteWriteParamterAdapter(Type type, string paramterName) => paramterName;
+        protected override string QuoteReadColumnAdapter(Type type, Type mapType, string columnName) => columnName;
 
-        public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
+        public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, string specialParamFlag, ColumnInfo col, Type type, object value)
         {
             if (value == null) return "NULL";
+            if (type.IsNumberType()) return string.Format(CultureInfo.InvariantCulture, "{0}", value);
             if (type == typeof(byte[])) return $"0x{CommonUtils.BytesSqlRaw(value as byte[])}";
             if (type == typeof(TimeSpan) || type == typeof(TimeSpan?))
             {
                 var ts = (TimeSpan)value;
                 value = $"{ts.Hours}:{ts.Minutes}:{ts.Seconds}.{ts.Milliseconds}";
             }
-            return FormatSql("{0}", value, 1);
+            return string.Format(CultureInfo.InvariantCulture, "{0}", (_orm.Ado as AdoProvider).AddslashesProcessParam(value, type, col));
         }
     }
 }

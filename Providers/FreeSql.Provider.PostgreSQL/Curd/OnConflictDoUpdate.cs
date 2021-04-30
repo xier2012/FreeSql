@@ -1,14 +1,12 @@
 ﻿using FreeSql.Aop;
-using FreeSql.Internal;
 using FreeSql.Internal.Model;
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Common;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FreeSql.PostgreSQL.Curd
@@ -27,6 +25,7 @@ namespace FreeSql.PostgreSQL.Curd
         {
             _pgsqlInsert = insert as PostgreSQLInsert<T1>;
             if (_pgsqlInsert == null) throw new Exception("OnConflictDoUpdate 是 FreeSql.Provider.PostgreSQL 特有的功能");
+            if (_pgsqlInsert._noneParameterFlag == "c") _pgsqlInsert._noneParameterFlag = "cu";
 
             if (columns != null)
             {
@@ -126,7 +125,7 @@ namespace FreeSql.PostgreSQL.Curd
 
                         if (colidx > 0) sb.Append(", \r\n");
 
-                        if (col.Attribute.IsVersion == true)
+                        if (col.Attribute.IsVersion == true && col.Attribute.MapType != typeof(byte[]))
                         {
                             var field = _pgsqlInsert.InternalCommonUtils.QuoteSqlName(col.Attribute.Name);
                             sb.Append(field).Append(" = ").Append(_pgsqlInsert.InternalCommonUtils.QuoteSqlName(_pgsqlInsert.InternalTable.DbName)).Append(".").Append(field).Append(" + 1");
@@ -156,12 +155,12 @@ namespace FreeSql.PostgreSQL.Curd
             if (string.IsNullOrEmpty(sql)) return 0;
 
             var before = new CurdBeforeEventArgs(_pgsqlInsert.InternalTable.Type, _pgsqlInsert.InternalTable, CurdType.Insert, sql, _pgsqlInsert.InternalParams);
-            _pgsqlInsert.InternalOrm.Aop.CurdBefore?.Invoke(_pgsqlInsert, before);
+            _pgsqlInsert.InternalOrm.Aop.CurdBeforeHandler?.Invoke(_pgsqlInsert, before);
             long ret = 0;
             Exception exception = null;
             try
             {
-                ret = _pgsqlInsert.InternalOrm.Ado.ExecuteNonQuery(_pgsqlInsert.InternalConnection, _pgsqlInsert.InternalTransaction, CommandType.Text, sql, _pgsqlInsert.InternalParams);
+                ret = _pgsqlInsert.InternalOrm.Ado.ExecuteNonQuery(_pgsqlInsert.InternalConnection, _pgsqlInsert.InternalTransaction, CommandType.Text, sql, _pgsqlInsert._commandTimeout, _pgsqlInsert.InternalParams);
             }
             catch (Exception ex)
             {
@@ -171,7 +170,7 @@ namespace FreeSql.PostgreSQL.Curd
             finally
             {
                 var after = new CurdAfterEventArgs(before, exception, ret);
-                _pgsqlInsert.InternalOrm.Aop.CurdAfter?.Invoke(_pgsqlInsert, after);
+                _pgsqlInsert.InternalOrm.Aop.CurdAfterHandler?.Invoke(_pgsqlInsert, after);
                 ClearData();
             }
             return ret;
@@ -179,18 +178,18 @@ namespace FreeSql.PostgreSQL.Curd
 
 #if net40
 #else
-        async public Task<long> ExecuteAffrowsAsync()
+        async public Task<long> ExecuteAffrowsAsync(CancellationToken cancellationToken = default)
         {
             var sql = this.ToSql();
             if (string.IsNullOrEmpty(sql)) return 0;
 
             var before = new CurdBeforeEventArgs(_pgsqlInsert.InternalTable.Type, _pgsqlInsert.InternalTable, CurdType.Insert, sql, _pgsqlInsert.InternalParams);
-            _pgsqlInsert.InternalOrm.Aop.CurdBefore?.Invoke(_pgsqlInsert, before);
+            _pgsqlInsert.InternalOrm.Aop.CurdBeforeHandler?.Invoke(_pgsqlInsert, before);
             long ret = 0;
             Exception exception = null;
             try
             {
-                ret = await _pgsqlInsert.InternalOrm.Ado.ExecuteNonQueryAsync(_pgsqlInsert.InternalConnection, _pgsqlInsert.InternalTransaction, CommandType.Text, sql, _pgsqlInsert.InternalParams);
+                ret = await _pgsqlInsert.InternalOrm.Ado.ExecuteNonQueryAsync(_pgsqlInsert.InternalConnection, _pgsqlInsert.InternalTransaction, CommandType.Text, sql, _pgsqlInsert._commandTimeout, _pgsqlInsert.InternalParams, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -200,7 +199,7 @@ namespace FreeSql.PostgreSQL.Curd
             finally
             {
                 var after = new CurdAfterEventArgs(before, exception, ret);
-                _pgsqlInsert.InternalOrm.Aop.CurdAfter?.Invoke(_pgsqlInsert, after);
+                _pgsqlInsert.InternalOrm.Aop.CurdAfterHandler?.Invoke(_pgsqlInsert, after);
                 ClearData();
             }
             return ret;

@@ -27,16 +27,29 @@ namespace FreeSql.Tests.Oracle
         {
             Assert.Null(g.oracle.Delete<Topic>().ToSql());
             var sql = g.oracle.Delete<Topic>(new[] { 1, 2 }).ToSql();
-            Assert.Equal("DELETE FROM \"TB_TOPIC22211\" WHERE (\"ID\" = 1 OR \"ID\" = 2)", sql);
+            Assert.Equal("DELETE FROM \"TB_TOPIC22211\" WHERE (\"ID\" IN (1,2))", sql);
 
             sql = g.oracle.Delete<Topic>(new Topic { Id = 1, Title = "test" }).ToSql();
             Assert.Equal("DELETE FROM \"TB_TOPIC22211\" WHERE (\"ID\" = 1)", sql);
 
             sql = g.oracle.Delete<Topic>(new[] { new Topic { Id = 1, Title = "test" }, new Topic { Id = 2, Title = "test" } }).ToSql();
-            Assert.Equal("DELETE FROM \"TB_TOPIC22211\" WHERE (\"ID\" = 1 OR \"ID\" = 2)", sql);
+            Assert.Equal("DELETE FROM \"TB_TOPIC22211\" WHERE (\"ID\" IN (1,2))", sql);
 
             sql = g.oracle.Delete<Topic>(new { id = 1 }).ToSql();
             Assert.Equal("DELETE FROM \"TB_TOPIC22211\" WHERE (\"ID\" = 1)", sql);
+
+            sql = g.oracle.Delete<MultiPkTopic>(new[] { new { Id1 = 1, Id2 = 10 }, new { Id1 = 2, Id2 = 20 } }).ToSql();
+            Assert.Equal("DELETE FROM \"MULTIPKTOPIC\" WHERE (\"ID1\" = 1 AND \"ID2\" = 10 OR \"ID1\" = 2 AND \"ID2\" = 20)", sql);
+        }
+        class MultiPkTopic
+        {
+            [Column(IsPrimary = true)]
+            public int Id1 { get; set; }
+            [Column(IsPrimary = true)]
+            public int Id2 { get; set; }
+            public int Clicks { get; set; }
+            public string Title { get; set; }
+            public DateTime CreateTime { get; set; }
         }
 
         [Fact]
@@ -78,13 +91,13 @@ namespace FreeSql.Tests.Oracle
         {
             Assert.Null(g.oracle.Delete<Topic>().ToSql());
             var sql = g.oracle.Delete<Topic>(new[] { 1, 2 }).AsTable(a => "TopicAsTable").ToSql();
-            Assert.Equal("DELETE FROM \"TOPICASTABLE\" WHERE (\"ID\" = 1 OR \"ID\" = 2)", sql);
+            Assert.Equal("DELETE FROM \"TOPICASTABLE\" WHERE (\"ID\" IN (1,2))", sql);
 
             sql = g.oracle.Delete<Topic>(new Topic { Id = 1, Title = "test" }).AsTable(a => "TopicAsTable").ToSql();
             Assert.Equal("DELETE FROM \"TOPICASTABLE\" WHERE (\"ID\" = 1)", sql);
 
             sql = g.oracle.Delete<Topic>(new[] { new Topic { Id = 1, Title = "test" }, new Topic { Id = 2, Title = "test" } }).AsTable(a => "TopicAsTable").ToSql();
-            Assert.Equal("DELETE FROM \"TOPICASTABLE\" WHERE (\"ID\" = 1 OR \"ID\" = 2)", sql);
+            Assert.Equal("DELETE FROM \"TOPICASTABLE\" WHERE (\"ID\" IN (1,2))", sql);
 
             sql = g.oracle.Delete<Topic>(new { id = 1 }).AsTable(a => "TopicAsTable").ToSql();
             Assert.Equal("DELETE FROM \"TOPICASTABLE\" WHERE (\"ID\" = 1)", sql);

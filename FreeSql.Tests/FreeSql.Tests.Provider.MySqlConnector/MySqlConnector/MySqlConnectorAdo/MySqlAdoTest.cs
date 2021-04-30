@@ -19,6 +19,11 @@ namespace FreeSql.Tests.MySqlConnector
         }
 
         [Fact]
+        public void ExecuteTest()
+        {
+            Assert.True(g.mysql.Ado.ExecuteConnectTest());
+        }
+        [Fact]
         public void ExecuteReader()
         {
 
@@ -31,8 +36,20 @@ namespace FreeSql.Tests.MySqlConnector
         [Fact]
         public void ExecuteNonQuery()
         {
-
+            var item = new TestExecute01 { title = "title01" };
+            g.mysql.Insert(item).ExecuteAffrows();
+            var affrows = g.mysql.Ado.ExecuteNonQuery("update TestExecute01 set title = '完成' where id=@id", new { id = item.id });
+            Assert.Equal(1, affrows);
+            var item2 = g.mysql.Select<TestExecute01>(item).First();
+            Assert.NotNull(item2);
+            Assert.Equal("完成", item2.title);
         }
+        class TestExecute01
+        {
+            public Guid id { get; set; }
+            public string title { get; set; }
+        }
+
         [Fact]
         public void ExecuteScalar()
         {
@@ -47,6 +64,8 @@ namespace FreeSql.Tests.MySqlConnector
             var t4 = g.mysql.Ado.Query<(int, string, string)>("select * from song");
 
             var t5 = g.mysql.Ado.Query<dynamic>("select * from song");
+
+            var t6 = g.mysql.Ado.Query<xxx>("select * from song where id in @ids", new { ids = new[] { 1, 2, 3 } });
         }
 
         [Fact]

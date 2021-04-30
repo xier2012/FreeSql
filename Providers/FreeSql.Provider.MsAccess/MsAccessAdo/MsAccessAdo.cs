@@ -1,6 +1,6 @@
 ﻿using FreeSql.Internal;
 using FreeSql.Internal.Model;
-using SafeObjectPool;
+using FreeSql.Internal.ObjectPool;
 using System;
 using System.Collections;
 using System.Data.Common;
@@ -13,8 +13,8 @@ namespace FreeSql.MsAccess
 {
     class MsAccessAdo : FreeSql.Internal.CommonProvider.AdoProvider
     {
-        public MsAccessAdo() : base(DataType.MsAccess) { }
-        public MsAccessAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings, Func<DbConnection> connectionFactory) : base(DataType.MsAccess)
+        public MsAccessAdo() : base(DataType.MsAccess, null, null) { }
+        public MsAccessAdo(CommonUtils util, string masterConnectionString, string[] slaveConnectionStrings, Func<DbConnection> connectionFactory) : base(DataType.MsAccess, masterConnectionString, slaveConnectionStrings)
         {
             base._util = util;
             if (connectionFactory != null)
@@ -42,8 +42,10 @@ namespace FreeSql.MsAccess
 
             if (param is bool || param is bool?)
                 return (bool)param ? -1 : 0;
-            else if (param is string || param is char)
+            else if (param is string)
                 return string.Concat("'", param.ToString().Replace("'", "''"), "'");
+            else if (param is char)
+                return string.Concat("'", param.ToString().Replace("'", "''").Replace('\0', ' '), "'");
             else if (param is Enum)
                 return ((Enum)param).ToInt64();
             else if (decimal.TryParse(string.Concat(param), out var trydec))
@@ -63,18 +65,18 @@ namespace FreeSql.MsAccess
             return string.Concat("'", param.ToString().Replace("'", "''"), "'");
         }
 
-        protected override DbCommand CreateCommand()
+        public override DbCommand CreateCommand()
         {
             return new OleDbCommand();
         }
 
-        protected override void ReturnConnection(IObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
+        public override void ReturnConnection(IObjectPool<DbConnection> pool, Object<DbConnection> conn, Exception ex)
         {
             var rawPool = pool as MsAccessConnectionPool;
             if (rawPool != null) rawPool.Return(conn, ex);
             else pool.Return(conn);
         }
 
-        protected override DbParameter[] GetDbParamtersByObject(string sql, object obj) => _util.GetDbParamtersByObject(sql, obj);
+        public override DbParameter[] GetDbParamtersByObject(string sql, object obj) => _util.GetDbParamtersByObject(sql, obj);
     }
 }

@@ -1,5 +1,6 @@
 ﻿using FreeSql;
 using Microsoft.AspNetCore.Mvc;
+using repository_01;
 using restful.Entitys;
 using System;
 using System.Collections.Generic;
@@ -32,32 +33,23 @@ namespace restful.Controllers
 
 
         public SongsController(IFreeSql fsql,
-            GuidRepository<Song> repos1,
-            GuidRepository<xxxx> repos2,
-
-            DefaultRepository<Song, int> repos11,
-            DefaultRepository<xxxx, int> repos21,
-
             BaseRepository<Song> repos3, BaseRepository<Song, int> repos4,
-            IBasicRepository<Song> repos31, IBasicRepository<Song, int> repos41,
-            IReadOnlyRepository<Song> repos311, IReadOnlyRepository<Song, int> repos411,
+            IBaseRepository<Song> repos31, IBaseRepository<Song, int> repos41,
 
-            SongRepository reposSong
+            SongRepository reposSong,
+            IBaseRepository<TestSoftDelete> reposTest
             )
         {
-            _songRepository = repos4;
+            Console.Write(reposTest.Select.ToSql());
 
+            _songRepository = repos4;
             //test code
             var curd1 = fsql.GetRepository<Song, int>();
             var curd2 = fsql.GetRepository<Song, string>();
             var curd3 = fsql.GetRepository<Song, Guid>();
             var curd4 = fsql.GetGuidRepository<Song>();
 
-            Console.WriteLine(repos1.Select.ToSql());
             Console.WriteLine(reposSong.Select.ToSql());
-
-            Console.WriteLine(repos2.Select.ToSql());
-            Console.WriteLine(repos21.Select.ToSql());
 
             using (reposSong.DataFilter.DisableAll())
             {
@@ -69,6 +61,17 @@ namespace restful.Controllers
         public Task<List<Song>> GetItems([FromQuery] string key, [FromQuery] int page = 1, [FromQuery] int limit = 20)
         {
             return _songRepository.Select.WhereIf(!string.IsNullOrEmpty(key), a => a.Title.Contains(key)).Page(page, limit).ToListAsync();
+        }
+
+        /// <summary>
+        /// curl -X GET "http://localhost:5000/restapi/Songs/GetPagingItems?key=FreeSql&PageNumber=2&PageSize=10" -H  "accept: text/plain"
+        /// </summary>
+        /// <param name="pagingInfo"></param>
+        /// <returns></returns>
+        [HttpGet("GetPagingItems")]
+        public Task<List<Song>> GetPagingItems([FromQuery] string key, [FromQuery] PagingInfo pagingInfo)
+        {
+            return _songRepository.Select.WhereIf(!string.IsNullOrEmpty(key), a => a.Title.Contains(key)).Page(pagingInfo).ToListAsync();
         }
 
         [HttpGet("{id}")]

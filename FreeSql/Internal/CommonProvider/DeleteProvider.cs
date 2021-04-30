@@ -11,19 +11,21 @@ using System.Threading.Tasks;
 namespace FreeSql.Internal.CommonProvider
 {
 
-    public abstract partial class DeleteProvider<T1> : IDelete<T1> where T1 : class
+    public abstract partial class DeleteProvider<T1> : IDelete<T1>
     {
-        protected IFreeSql _orm;
-        protected CommonUtils _commonUtils;
-        protected CommonExpression _commonExpression;
-        protected TableInfo _table;
-        protected Func<string, string> _tableRule;
-        protected StringBuilder _where = new StringBuilder();
-        protected int _whereTimes = 0;
-        protected List<GlobalFilter.Item> _whereGlobalFilter;
-        protected List<DbParameter> _params = new List<DbParameter>();
-        protected DbTransaction _transaction;
-        protected DbConnection _connection;
+        public IFreeSql _orm;
+        public CommonUtils _commonUtils;
+        public CommonExpression _commonExpression;
+        public TableInfo _table;
+        public Func<string, string> _tableRule;
+        public StringBuilder _where = new StringBuilder();
+        public int _whereTimes = 0;
+        public List<GlobalFilter.Item> _whereGlobalFilter;
+        public List<DbParameter> _params = new List<DbParameter>();
+        public DbTransaction _transaction;
+        public DbConnection _connection;
+        public int _commandTimeout = 0;
+        public Action<StringBuilder> _interceptSql;
 
         public DeleteProvider(IFreeSql orm, CommonUtils commonUtils, CommonExpression commonExpression, object dywhere)
         {
@@ -56,6 +58,11 @@ namespace FreeSql.Internal.CommonProvider
             _connection = connection;
             return this;
         }
+        public IDelete<T1> CommandTimeout(int timeout)
+        {
+            _commandTimeout = timeout;
+            return this;
+        }
 
         public int ExecuteAffrows()
         {
@@ -63,39 +70,45 @@ namespace FreeSql.Internal.CommonProvider
             if (string.IsNullOrEmpty(sql)) return 0;
             var dbParms = _params.ToArray();
             var before = new Aop.CurdBeforeEventArgs(_table.Type, _table, Aop.CurdType.Delete, sql, dbParms);
-            _orm.Aop.CurdBefore?.Invoke(this, before);
+            _orm.Aop.CurdBeforeHandler?.Invoke(this, before);
             var affrows = 0;
             Exception exception = null;
             try
             {
-                affrows = _orm.Ado.ExecuteNonQuery(_connection, _transaction, CommandType.Text, sql, dbParms);
+                affrows = _orm.Ado.ExecuteNonQuery(_connection, _transaction, CommandType.Text, sql, _commandTimeout, dbParms);
             }
             catch (Exception ex)
             {
                 exception = ex;
-                throw ex;
+                throw;
             }
             finally
             {
                 var after = new Aop.CurdAfterEventArgs(before, exception, affrows);
-                _orm.Aop.CurdAfter?.Invoke(this, after);
+                _orm.Aop.CurdAfterHandler?.Invoke(this, after);
             }
             this.ClearData();
             return affrows;
         }
         public abstract List<T1> ExecuteDeleted();
 
-        public IDelete<T1> Where(Expression<Func<T1, bool>> exp) => this.Where(_commonExpression.ExpressionWhereLambdaNoneForeignObject(null, _table, null, exp?.Body, null, _params));
-        public IDelete<T1> Where(string sql, object parms = null)
+        public IDelete<T1> Where(Expression<Func<T1, bool>> exp) => WhereIf(true, exp);
+        public IDelete<T1> WhereIf(bool condition, Expression<Func<T1, bool>> exp)
         {
-            if (string.IsNullOrEmpty(sql)) return this;
+            if (condition == false || exp == null) return this;
+            return this.Where(_commonExpression.ExpressionWhereLambdaNoneForeignObject(null, _table, null, exp?.Body, null, _params));
+        }
+        public IDelete<T1> Where(string sql, object parms = null) => WhereIf(true, sql, parms);
+        public IDelete<T1> WhereIf(bool condition, string sql, object parms = null)
+        {
+            if (condition == false || string.IsNullOrEmpty(sql)) return this;
             if (++_whereTimes > 1) _where.Append(" AND ");
-            _where.Append("(").Append(sql).Append(")");
+            _where.Append('(').Append(sql).Append(')');
             if (parms != null) _params.AddRange(_commonUtils.GetDbParamtersByObject(sql, parms));
             return this;
         }
         public IDelete<T1> Where(T1 item) => this.Where(new[] { item });
-        public IDelete<T1> Where(IEnumerable<T1> items) => this.Where(_commonUtils.WhereItems(_table, "", items));
+        public IDelete<T1> Where(IEnumerable<T1> items) => this.Where(_commonUtils.WhereItems(_table.Primarys, "", items));
         public IDelete<T1> WhereDynamic(object dywhere, bool not = false) => not == false ?
             this.Where(_commonUtils.WhereObject(_table, "", dywhere)) :
             this.Where($"not({_commonUtils.WhereObject(_table, "", dywhere)})");
@@ -151,10 +164,11 @@ namespace FreeSql.Internal.CommonProvider
 
             if (_whereGlobalFilter.Any())
             {
-                var globalFilterCondi = _commonExpression.GetWhereCascadeSql(new SelectTableInfo { Table = _table }, _whereGlobalFilter.Select(a => a.Where).ToList());
+                var globalFilterCondi = _commonExpression.GetWhereCascadeSql(new SelectTableInfo { Table = _table }, _whereGlobalFilter, false);
                 if (string.IsNullOrEmpty(globalFilterCondi) == false)
                     sb.Append(" AND ").Append(globalFilterCondi);
             }
+            _interceptSql?.Invoke(sb);
             return sb.ToString();
         }
     }

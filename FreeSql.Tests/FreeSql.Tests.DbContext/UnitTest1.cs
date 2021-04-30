@@ -21,6 +21,35 @@ namespace FreeSql.Tests
         [Fact]
         public void Include_ManyToMany()
         {
+            g.sqlite.Delete<userinfo>().Where("1=1").ExecuteAffrows();
+            g.sqlite.Delete<DEPARTMENTS>().Where("1=1").ExecuteAffrows();
+            g.sqlite.Delete<dept_user>().Where("1=1").ExecuteAffrows();
+            BaseEntity.Initialization(g.sqlite, null);
+
+            userinfo user = new userinfo { userid = 1, badgenumber = "", Name="", IDCardNo="" };
+            user.Insert();
+
+            user.depts = new List<DEPARTMENTS>(
+                new[] {
+                    new DEPARTMENTS { deptid = 1, deptcode = "01", deptname = "" },
+                    new DEPARTMENTS { deptid = 2, deptcode = "02", deptname = "" },
+                    new DEPARTMENTS { deptid = 3, deptcode = "03" , deptname = ""},
+                });
+            user.SaveMany("depts");
+
+            user.depts = new List<DEPARTMENTS>(
+                new[] {
+                    new DEPARTMENTS { deptid = 1, deptcode = "01", deptname = "" },
+                    new DEPARTMENTS { deptid = 2, deptcode = "02", deptname = "" },
+                    new DEPARTMENTS { deptid = 4, deptcode = "04", deptname = "" },
+                });
+            user.SaveMany("depts");
+
+            user.depts = new List<DEPARTMENTS>(
+                new[] {
+                    new DEPARTMENTS { deptid = 2, deptcode = "02", deptname = "" },
+                });
+            user.SaveMany("depts");
 
             g.sqlite.CodeFirst.SyncStructure<Song_tag>();
             g.sqlite.CodeFirst.SyncStructure<Tag>();
@@ -39,6 +68,21 @@ namespace FreeSql.Tests
 
             using (var ctx = g.sqlite.CreateDbContext())
             {
+                var setTag = ctx.Set<Tag>();
+                var tags = setTag.Select.Limit(10).ToList();
+                setTag.BeginEdit(tags);
+
+                tags.Add(new Tag
+                {
+                    Ddd = DateTime.Now.Second,
+                    Name = "test_manytoMany_01_中国2234234"
+                });
+                tags[0].Name = "123123";
+                tags.RemoveAt(1);
+
+                //tags.Clear();
+
+                Assert.Equal(3, setTag.EndEdit());
 
                 var test150_02 = ctx.Set<Tag>()
                     .Select.From<Tag>((s, b) => s.InnerJoin(a => a.Id == b.Id))
@@ -89,6 +133,8 @@ namespace FreeSql.Tests
                 };
                 ctx.AddRange(new[] { song1, song2, song3 });
 
+                ctx.Orm.Select<Tag>().Limit(10).ToList();
+
                 ctx.AddRange(
                     new[] {
                         new Song_tag { Song_id = song1.Id, Tag_id = tag1.Id },
@@ -119,9 +165,9 @@ namespace FreeSql.Tests
 
             //支持 1对多 级联保存
 
-            using (var ctx = new FreeContext(g.sqlite))
+            using (var ctx = g.sqlite.CreateDbContext())
             {
-
+                ctx.Options.EnableAddOrUpdateNavigateList = true;
                 var tags = ctx.Set<Tag>().Select.IncludeMany(a => a.Tags).ToList();
 
                 var tag = new Tag
@@ -139,6 +185,9 @@ namespace FreeSql.Tests
                     }
                 };
                 ctx.Add(tag);
+
+                var tags2 = ctx.Orm.Select<Tag>().IncludeMany(a => a.Tags).ToList();
+
                 ctx.SaveChanges();
             }
         }
@@ -148,12 +197,14 @@ namespace FreeSql.Tests
         {
             //查询 1对多，再级联保存
 
-            using (var ctx = new FreeContext(g.sqlite))
+            using (var ctx = g.sqlite.CreateDbContext())
             {
-
+                ctx.Options.EnableAddOrUpdateNavigateList = true;
                 var tag = ctx.Set<Tag>().Select.First();
                 tag.Tags.Add(new Tag { Name = "sub3" });
+                tag.Name = Guid.NewGuid().ToString();
                 ctx.Update(tag);
+                var xxx = ctx.Orm.Select<Tag>().First();
                 ctx.SaveChanges();
             }
         }

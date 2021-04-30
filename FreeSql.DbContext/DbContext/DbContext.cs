@@ -5,13 +5,19 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Threading;
+using FreeSql.Internal.Model;
 
 namespace FreeSql
 {
     public abstract partial class DbContext : IDisposable
     {
-        internal IFreeSql _ormPriv;
-        public IFreeSql Orm => _ormPriv ?? throw new ArgumentNullException("请在 OnConfiguring 或 AddFreeDbContext 中配置 UseFreeSql");
+        internal DbContextScopedFreeSql _ormScoped;
+        internal IFreeSql OrmOriginal => _ormScoped?._originalFsql ?? throw new ArgumentNullException("请在 OnConfiguring 或 AddFreeDbContext 中配置 UseFreeSql");
+
+        /// <summary>
+        /// 该对象 Select/Delete/Insert/Update/InsertOrUpdate 与 DbContext 事务保持一致，可省略传递 WithTransaction
+        /// </summary>
+        public IFreeSql Orm => _ormScoped ?? throw new ArgumentNullException("请在 OnConfiguring 或 AddFreeDbContext 中配置 UseFreeSql");
 
         #region Property UnitOfWork
         internal bool _isUseUnitOfWork = true; //是否创建工作单元事务
@@ -23,7 +29,7 @@ namespace FreeSql
             {
                 if (_uowPriv != null) return _uowPriv;
                 if (_isUseUnitOfWork == false) return null;
-                return _uowPriv = new UnitOfWork(Orm);
+                return _uowPriv = new UnitOfWork(OrmOriginal);
             }
         }
         #endregion
@@ -38,9 +44,11 @@ namespace FreeSql
                 if (_optionsPriv == null)
                 {
                     _optionsPriv = new DbContextOptions();
-                    if (FreeSqlDbContextExtensions._dicSetDbContextOptions.TryGetValue(Orm, out var opt))
+                    if (FreeSqlDbContextExtensions._dicSetDbContextOptions.TryGetValue(OrmOriginal.Ado.Identifier, out var opt))
                     {
                         _optionsPriv.EnableAddOrUpdateNavigateList = opt.EnableAddOrUpdateNavigateList;
+                        _optionsPriv.EnableGlobalFilter = opt.EnableGlobalFilter;
+                        _optionsPriv.NoneParameter = opt.NoneParameter;
                         _optionsPriv.OnEntityChange = opt.OnEntityChange;
                     }
                 }
@@ -58,30 +66,39 @@ namespace FreeSql
         protected DbContext() : this(null, null) { }
         protected DbContext(IFreeSql fsql, DbContextOptions options)
         {
-            _ormPriv = fsql;
+            _ormScoped = DbContextScopedFreeSql.Create(fsql, () => this, () => UnitOfWork);
             _optionsPriv = options;
 
-            if (_ormPriv == null)
+            if (_ormScoped == null)
             {
                 var builder = new DbContextOptionsBuilder();
                 OnConfiguring(builder);
-                _ormPriv = builder._fsql;
+                _ormScoped = DbContextScopedFreeSql.Create(builder._fsql, () => this, () => UnitOfWork);
                 _optionsPriv = builder._options;
             }
-            if (_ormPriv != null) InitPropSets();
+            if (_ormScoped != null) InitPropSets();
         }
-        protected virtual void OnConfiguring(DbContextOptionsBuilder builder) { }
+        protected virtual void OnConfiguring(DbContextOptionsBuilder options) { }
+        protected virtual void OnModelCreating(ICodeFirst codefirst) { }
 
         #region Set
-        static ConcurrentDictionary<Type, PropertyInfo[]> _dicGetDbSetProps = new ConcurrentDictionary<Type, PropertyInfo[]>();
+        static ConcurrentDictionary<Type, NativeTuple<PropertyInfo[], bool>> _dicGetDbSetProps = new ConcurrentDictionary<Type, NativeTuple<PropertyInfo[], bool>>();
         internal void InitPropSets()
         {
-            var props = _dicGetDbSetProps.GetOrAdd(this.GetType(), tp =>
-                tp.GetProperties(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public)
-                    .Where(a => a.PropertyType.IsGenericType &&
-                        a.PropertyType == typeof(DbSet<>).MakeGenericType(a.PropertyType.GetGenericArguments()[0])).ToArray());
+            var thisType = this.GetType();
+            var dicval = _dicGetDbSetProps.GetOrAdd(thisType, tp =>
+                NativeTuple.Create(
+                    tp.GetProperties(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public)
+                        .Where(a => a.PropertyType.IsGenericType &&
+                            a.PropertyType == typeof(DbSet<>).MakeGenericType(a.PropertyType.GetGenericArguments()[0])).ToArray(),
+                    false));
+            if (dicval.Item2 == false)
+            {
+                if (_dicGetDbSetProps.TryUpdate(thisType, NativeTuple.Create(dicval.Item1, true), dicval))
+                    OnModelCreating(OrmOriginal.CodeFirst);
+            }
 
-            foreach (var prop in props)
+            foreach (var prop in dicval.Item1)
             {
                 var set = this.Set(prop.PropertyType.GetGenericArguments()[0]);
 
@@ -108,7 +125,7 @@ namespace FreeSql
         #region DbSet 快速代理
         void CheckEntityTypeOrThrow(Type entityType)
         {
-            if (Orm.CodeFirst.GetTableByEntity(entityType) == null)
+            if (OrmOriginal.CodeFirst.GetTableByEntity(entityType) == null)
                 throw new ArgumentException($"参数 data 类型错误 {entityType.FullName} ");
         }
         /// <summary>
@@ -224,12 +241,16 @@ namespace FreeSql
 #endif
         #endregion
 
-        #region Queue Action
+        #region Queue PreCommand
         public class EntityChangeReport
         {
             public class ChangeInfo
             {
                 public object Object { get; set; }
+                /// <summary>
+                /// Type = Update 的时候，获取更新之前的对象
+                /// </summary>
+                public object BeforeObject { get; set; }
                 public EntityChangeType Type { get; set; }
             }
             /// <summary>
@@ -243,7 +264,7 @@ namespace FreeSql
         }
         internal List<EntityChangeReport.ChangeInfo> _entityChangeReport = new List<EntityChangeReport.ChangeInfo>();
         public enum EntityChangeType { Insert, Update, Delete, SqlRaw }
-        internal class ExecCommandInfo
+        internal class PrevCommandInfo
         {
             public EntityChangeType changeType { get; set; }
             public IDbSet dbSet { get; set; }
@@ -251,11 +272,11 @@ namespace FreeSql
             public Type entityType { get; set; }
             public object state { get; set; }
         }
-        Queue<ExecCommandInfo> _actions = new Queue<ExecCommandInfo>();
+        Queue<PrevCommandInfo> _prevCommands = new Queue<PrevCommandInfo>();
         internal int _affrows = 0;
 
-        internal void EnqueueAction(EntityChangeType changeType, IDbSet dbSet, Type stateType, Type entityType, object state) =>
-            _actions.Enqueue(new ExecCommandInfo { changeType = changeType, dbSet = dbSet, stateType = stateType, entityType = entityType, state = state });
+        internal void EnqueuePreCommand(EntityChangeType changeType, IDbSet dbSet, Type stateType, Type entityType, object state) =>
+            _prevCommands.Enqueue(new PrevCommandInfo { changeType = changeType, dbSet = dbSet, stateType = stateType, entityType = entityType, state = state });
         #endregion
 
         ~DbContext() => this.Dispose();
@@ -265,7 +286,7 @@ namespace FreeSql
             if (Interlocked.Increment(ref _disposeCounter) != 1) return;
             try
             {
-                _actions.Clear();
+                _prevCommands.Clear();
 
                 foreach (var set in _listSet)
                     try

@@ -13,11 +13,11 @@ namespace FreeSql
         bool IsAutoSyncStructure { get; set; }
 
         /// <summary>
-        /// 转小写同步结构
+        /// 转小写同步结构，适用 PostgreSQL
         /// </summary>
         bool IsSyncStructureToLower { get; set; }
         /// <summary>
-        /// 转大写同步结构
+        /// 转大写同步结构，适用 Oracle/达梦/人大金仓
         /// </summary>
         bool IsSyncStructureToUpper { get; set; }
         /// <summary>
@@ -63,47 +63,48 @@ namespace FreeSql
         /// <returns></returns>
         string GetComparisonDDLStatements(Type entityType, string tableName);
         /// <summary>
-        /// 同步实体类型到数据库
+        /// 同步实体类型到数据库<para></para>
+        /// 注意：生产环境中谨慎使用
         /// </summary>
         /// <typeparam name="TEntity"></typeparam>
-        /// <returns></returns>
-        bool SyncStructure<TEntity>();
+        void SyncStructure<TEntity>();
         /// <summary>
-        /// 同步实体类型集合到数据库
+        /// 同步实体类型集合到数据库<para></para>
+        /// 注意：生产环境中谨慎使用
         /// </summary>
         /// <param name="entityTypes"></param>
-        /// <returns></returns>
-        bool SyncStructure(params Type[] entityTypes);
+        void SyncStructure(params Type[] entityTypes);
         /// <summary>
-        /// 同步实体类型到数据库（指定表名）
+        /// 同步实体类型到数据库（指定表名）<para></para>
+        /// 注意：生产环境中谨慎使用
         /// </summary>
         /// <param name="entityType">实体类型</param>
         /// <param name="tableName">指定表名对比</param>
-        /// <returns></returns>
-        bool SyncStructure(Type entityType, string tableName);
+        /// <param name="isForceSync">强制同步结构，无视缓存每次都同步</param>
+        void SyncStructure(Type entityType, string tableName, bool isForceSync = false);
 
         /// <summary>
         /// 根据 System.Type 获取数据库信息
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
-        (int type, string dbtype, string dbtypeFull, bool? isnullable, object defaultValue)? GetDbInfo(Type type);
+        DbInfoResult GetDbInfo(Type type);
         /// <summary>
-        /// 在外部配置实体的特性
+        /// FreeSql FluentApi 配置实体，方法名与特性相同
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="entity"></param>
         /// <returns></returns>
         ICodeFirst ConfigEntity<T>(Action<TableFluent<T>> entity);
         /// <summary>
-        /// 在外部配置实体的特性
+        /// FreeSql FluentApi 配置实体，方法名与特性相同
         /// </summary>
         /// <param name="type"></param>
         /// <param name="entity"></param>
         /// <returns></returns>
         ICodeFirst ConfigEntity(Type type, Action<TableFluent> entity);
         /// <summary>
-        /// 获取在外部配置实体的特性
+        /// 获取 FreeSql FluentApi 配置实体的元数据
         /// </summary>
         /// <param name="type"></param>
         /// <returns>未使用ConfigEntity配置时，返回null</returns>

@@ -1,9 +1,12 @@
-﻿using RazorEngine.Templating;
+﻿using FreeSql.DatabaseModel;
+using RazorEngine.Templating;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Console = Colorful.Console;
 
@@ -18,7 +21,9 @@ namespace FreeSql.Generator
         DataType ArgsDbType { get; }
         string ArgsConnectionString { get; }
         string ArgsFilter { get; }
+        string ArgsMatch { get; }
         string ArgsFileName { get; }
+        bool ArgsReadKey { get; }
         internal string ArgsOutput { get; private set; }
 
         public ConsoleApp(string[] args, ManualResetEvent wait)
@@ -56,7 +61,9 @@ new Colorful.Formatter("v" + string.Join(".", typeof(ConsoleApp).Assembly.GetNam
             ArgsNameOptions = new[] { false, false, false, false };
             ArgsNameSpace = "MyProject";
             ArgsFilter = "";
+            ArgsMatch = "";
             ArgsFileName = "{name}.cs";
+            ArgsReadKey = true;
             Action<string> setArgsOutput = value =>
             {
                 ArgsOutput = value;
@@ -82,41 +89,40 @@ new Colorful.Formatter("v" + string.Join(".", typeof(ConsoleApp).Assembly.GetNam
   > {1} {2} 1 {3} 0,0,0,0 {4} MyProject {5} ""MySql,Data Source=127.0.0.1;...""
 
      -Razor 1                  * 选择模板：实体类+特性
-     
      -Razor 2                  * 选择模板：实体类+特性+导航属性
-     
      -Razor ""d:\diy.cshtml""    * 自定义模板文件
-     
-     -NameOptions              * 总共4个布尔值，分别对应：
-                               # 首字母大写
-                               # 首字母大写,其他小写
-                               # 全部小写
-                               # 下划线转驼峰
-                               
+
+     -NameOptions              * 4个布尔值对应：
+                                 首字母大写
+                                 首字母大写,其他小写
+                                 全部小写
+                                 下划线转驼峰
+
      -NameSpace                * 命名空间
-     
-     -DB ""{6},Data Source=127.0.0.1;Port=3306;User ID=root;Password=root;Initial Catalog=数据库;Charset=utf8;SslMode=none;Max pool size=2""
-     
-     -DB ""{7},Data Source=.;Integrated Security=True;Initial Catalog=数据库;Pooling=true;Max Pool Size=2""
-     
-     -DB ""{8},Host=192.168.164.10;Port=5432;Username=postgres;Password=123456;Database=数据库;Pooling=true;Maximum Pool Size=2""
-     
-     -DB ""{9},user id=user1;password=123456;data source=//127.0.0.1:1521/XE;Pooling=true;Max Pool Size=2""
-     
-     -DB ""{10},Driver={DM8 ODBC DRIVER};Server=127.0.0.1:5236;Persist Security Info=False;Trusted_Connection=Yes;UID=USER1;PWD=123456789;Max pool size=2""
-                               {10} 是国产达梦数据库，需要使用 ODBC 连接
+
+     -DB ""{6},data source=127.0.0.1;port=3306;user id=root;password=root;initial catalog=数据库;charset=utf8;sslmode=none;max pool size=2""
+     -DB ""{7},data source=.;integrated security=True;initial catalog=数据库;pooling=true;max pool size=2""
+     -DB ""{8},host=192.168.164.10;port=5432;username=postgres;password=123456;database=数据库;pooling=true;maximum pool size=2""
+     -DB ""{9},user id=user1;password=123456;data source=//127.0.0.1:1521/XE;pooling=true;max pool size=2""
+     -DB ""{10},data source=document.db""
+     -DB ""{14},database=localhost:D:\fbdata\EXAMPLES.fdb;user=sysdba;password=123456;max pool size=2""
+     -DB ""{11},server=127.0.0.1;port=5236;user id=2user;password=123456789;database=2user;poolsize=2""
+     -DB ""{12},server=127.0.0.1;port=54321;uid=USER2;pwd=123456789;database=数据库""
+     -DB ""{13},host=192.168.164.10;port=2003;database=数据库;username=SYSDBA;password=szoscar55;maxpoolsize=2""
+                               * {11}(达梦数据库)、{12}(人大金仓数据库)、{13}(神舟通用数据库)
 
      -Filter                   Table+View+StoreProcedure
                                默认生成：表+视图+存储过程
                                如果不想生成视图和存储过程 -Filter View+StoreProcedure
 
-     -FileName                 文件名，默认：{name}.cs
+     -Match                    表名或正则表达式，只生成匹配的表，如：dbo\.TB_.+
 
+     -FileName                 文件名，默认：{name}.cs
      -Output                   保存路径，默认为当前 shell 所在目录
-                               {11}
+                               {15}
 
 ", Color.SlateGray,
-new Colorful.Formatter("使用 FreeSql 快速生成数据库的实体类", Color.SlateGray),
+new Colorful.Formatter("FreeSql 快速生成数据库的实体类", Color.SlateGray),
 new Colorful.Formatter("FreeSql.Generator", Color.White),
 new Colorful.Formatter("-Razor", Color.ForestGreen),
 new Colorful.Formatter("-NameOptions", Color.ForestGreen),
@@ -126,7 +132,11 @@ new Colorful.Formatter("MySql", Color.Yellow),
 new Colorful.Formatter("SqlServer", Color.Yellow),
 new Colorful.Formatter("PostgreSQL", Color.Yellow),
 new Colorful.Formatter("Oracle", Color.Yellow),
-new Colorful.Formatter("OdbcDameng", Color.Yellow),
+new Colorful.Formatter("Sqlite", Color.Yellow),
+new Colorful.Formatter("Dameng", Color.Yellow),
+new Colorful.Formatter("KingbaseES", Color.Yellow),
+new Colorful.Formatter("ShenTong", Color.Yellow),
+new Colorful.Formatter("Firebird", Color.Yellow),
 new Colorful.Formatter("推荐在实体类目录创建 gen.bat，双击它重新所有实体类", Color.ForestGreen)
 );
                 wait.Set();
@@ -165,8 +175,12 @@ new Colorful.Formatter("推荐在实体类目录创建 gen.bat，双击它重新
                             case "sqlserver": ArgsDbType = DataType.SqlServer; break;
                             case "postgresql": ArgsDbType = DataType.PostgreSQL; break;
                             case "oracle": ArgsDbType = DataType.Oracle; break;
-                            case "odbcdameng": ArgsDbType = DataType.OdbcDameng; break;
-                            default: throw new ArgumentException($"-DB 参数错误，不支持的类型：{dbargs[0]}");
+                            case "sqlite": ArgsDbType = DataType.Sqlite; break;
+                            case "firebird": ArgsDbType = DataType.Firebird; break;
+                            case "dameng": ArgsDbType = DataType.Dameng; break;
+                            case "kingbasees": ArgsDbType = DataType.KingbaseES; break;
+                            case "shentong": ArgsDbType = DataType.ShenTong; break;
+                            default: throw new ArgumentException($"-DB 参数错误，不支持的类型：\"{dbargs[0]}\"");
                         }
                         ArgsConnectionString = dbargs[1].Trim();
                         a++;
@@ -175,8 +189,17 @@ new Colorful.Formatter("推荐在实体类目录创建 gen.bat，双击它重新
                         ArgsFilter = args[a + 1];
                         a++;
                         break;
+                    case "-match":
+                        ArgsMatch = args[a + 1];
+                        if (Regex.IsMatch("", ArgsMatch)) { } //throw
+                        a++;
+                        break;
                     case "-filename":
                         ArgsFileName = args[a + 1];
+                        a++;
+                        break;
+                    case "-readkey":
+                        ArgsReadKey = args[a + 1].Trim() == "1";
                         a++;
                         break;
                     case "-output":
@@ -204,12 +227,27 @@ new Colorful.Formatter("推荐在实体类目录创建 gen.bat，双击它重新
                 .UseMonitorCommand(cmd => Console.WriteFormatted(cmd.CommandText + "\r\n", Color.SlateGray))
                 .Build())
             {
-                var tables = fsql.DbFirst.GetTablesByDatabase();
+                List<DbTableInfo> tables = new List<DbTableInfo>();
+                if (string.IsNullOrEmpty(ArgsMatch) == false)
+                {
+                    try
+                    {
+                        var matchTable = fsql.DbFirst.GetTableByName(ArgsMatch);
+                        if (matchTable != null) tables.Add(matchTable);
+                    }
+                    catch { }
+                }
+                if (tables.Any() == false)
+                    tables = fsql.DbFirst.GetTablesByDatabase();
                 var outputTables = tables;
 
                 //开始生成操作
                 foreach (var table in outputTables)
                 {
+                    if (string.IsNullOrEmpty(ArgsMatch) == false)
+                    {
+                        if (Regex.IsMatch($"{table.Schema}.{table.Name}".TrimStart('.'), ArgsMatch) == false) continue;
+                    }
                     switch (table.Type)
                     {
                         case DatabaseModel.DbTableType.TABLE:
@@ -239,15 +277,15 @@ new Colorful.Formatter("推荐在实体类目录创建 gen.bat，双击它重新
                     RazorEngine.Engine.Razor.Run(razorId, sw, null, model);
 
                     StringBuilder plus = new StringBuilder();
-                    plus.AppendLine("//------------------------------------------------------------------------------");
-                    plus.AppendLine("// <auto-generated>");
-                    plus.AppendLine("//     此代码由工具 FreeSql.Generator 生成。");
-                    plus.AppendLine("//     运行时版本:" + Environment.Version.ToString());
-                    plus.AppendLine("//     Website: https://github.com/2881099/FreeSql");
-                    plus.AppendLine("//     对此文件的更改可能会导致不正确的行为，并且如果");
-                    plus.AppendLine("//     重新生成代码，这些更改将会丢失。");
-                    plus.AppendLine("// </auto-generated>");
-                    plus.AppendLine("//------------------------------------------------------------------------------");
+                    //plus.AppendLine("//------------------------------------------------------------------------------");
+                    //plus.AppendLine("// <auto-generated>");
+                    //plus.AppendLine("//     此代码由工具 FreeSql.Generator 生成。");
+                    //plus.AppendLine("//     运行时版本:" + Environment.Version.ToString());
+                    //plus.AppendLine("//     Website: https://github.com/2881099/FreeSql");
+                    //plus.AppendLine("//     对此文件的更改可能会导致不正确的行为，并且如果");
+                    //plus.AppendLine("//     重新生成代码，这些更改将会丢失。");
+                    //plus.AppendLine("// </auto-generated>");
+                    //plus.AppendLine("//------------------------------------------------------------------------------");
                     plus.Append(sw.ToString());
                     plus.AppendLine();
 
@@ -281,7 +319,7 @@ new Colorful.Formatter("推荐在实体类目录创建 gen.bat，双击它重新
                 }
 
                 File.WriteAllText(rebuildBat, $@"
-FreeSql.Generator -Razor ""__razor.cshtml.txt"" -NameOptions {string.Join(",", ArgsNameOptions.Select(a => a ? 1 : 0))} -NameSpace {ArgsNameSpace} -DB ""{ArgsDbType},{ArgsConnectionString}""{(string.IsNullOrEmpty(ArgsFilter) ? "" : $" -Filter \"{ArgsFilter}\"")} -FileName ""{ArgsFileName}""
+FreeSql.Generator -Razor ""__razor.cshtml.txt"" -NameOptions {string.Join(",", ArgsNameOptions.Select(a => a ? 1 : 0))} -NameSpace {ArgsNameSpace} -DB ""{ArgsDbType},{ArgsConnectionString}""{(string.IsNullOrEmpty(ArgsFilter) ? "" : $" -Filter \"{ArgsFilter}\"")}{(string.IsNullOrEmpty(ArgsMatch) ? "" : $" -Match \"{ArgsMatch}\"")} -FileName ""{ArgsFileName}""
 ");
                 Console.WriteFormatted(" OUT -> " + rebuildBat + "    (以后) 双击它重新生成实体\r\n", Color.Magenta);
                 ++outputCounter;
@@ -289,7 +327,8 @@ FreeSql.Generator -Razor ""__razor.cshtml.txt"" -NameOptions {string.Join(",", A
 
             Console.WriteFormatted($"\r\n[{DateTime.Now.ToString("MM-dd HH:mm:ss")}] 生成完毕，总共生成了 {outputCounter} 个文件，目录：\"{ArgsOutput}\"\r\n", Color.DarkGreen);
 
-            Console.ReadKey();
+            if (ArgsReadKey)
+                Console.ReadKey();
             wait.Set();
         }
     }

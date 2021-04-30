@@ -11,7 +11,7 @@ using System.Linq.Expressions;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
 using System.Threading;
-using System.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using kwlib;
 using System.Text;
 
@@ -147,6 +147,8 @@ namespace FreeSql.Tests
         public class LinUser
         {
             public long id { get; set; }
+            public string name { get; set; }
+            public string nick { get; set; }
         }
 
         public class Comment
@@ -242,10 +244,22 @@ namespace FreeSql.Tests
             public int id { get; set; }
             public string title { get; set; }
         }
+        public class otot3 : otot1
+        {
+
+        }
 
         [Fact]
         public void Test02()
         {
+            g.sqlite.GlobalFilter
+                .ApplyOnly<otot1>("id1", a => a.name == "123");
+
+            var sqlonly = g.sqlite.Select<otot1, otot2, otot3>()
+                .InnerJoin((a, b, c) => a.id == b.id)
+                .InnerJoin((a, b, c) => b.id == c.id)
+                .ToSql();
+
             g.sqlite.Update<TestIgnoreDefaultValue>(Guid.Empty).Set(a => a.ct1 == a.ct2).ExecuteAffrows();
 
             g.sqlite.Insert(new otot1 { name = "otot1_name1" }).ExecuteAffrows();
@@ -278,20 +292,29 @@ namespace FreeSql.Tests
             var kwrepo = g.sqlite.GetRepository<userinfo>();
             kwrepo.Insert(u1);
 
+            g.sqlite.GlobalFilter.ApplyIf<gf_t1>("random_filter", () => new Random().Next(0, 2) % 2 == 0 ? true : false, a => a.rowstate > 0);
 
-            g.sqlite.GlobalFilter.Apply<gf_t1>("gft1", a => a.rowstate > -1)
+            Enumerable.Range(0, 10).ToList().ForEach(aidx =>
+            {
+                var sql1 = g.sqlite.Select<gf_t1>().ToSql();
+            });
+
+            g.sqlite.GlobalFilter.Apply<gf_t1>("gft1", a => a.rowstate > -1 && g.sqlite.Select<gf_t2>().Any(b => b.id == a.id))
                 .Apply<gf_t2>("gft2", a => a.rowstate > -2)
-                .Apply<gf_t3>("gft3", a => a.rowstate > -3);
+                .Apply<gf_t3>("gft3", a => a.rowstate > -3)
+                .Apply<gf_t1>("gft11", a => a.rowstate > -1);
 
             var tksk1 = g.sqlite.Select<gf_t1, gf_t2, gf_t3>()
                 .InnerJoin((a, b, c) => a.id == b.id)
                 .Where((a, b, c) => c.rowstate > 10)
                 .ToList();
+            g.sqlite.Update<gf_t1>().NoneParameter().Set(a => a.rowstate + 1).Where(a => a.rowstate >= 0).ExecuteAffrows();
 
             var tksk2 = g.sqlite.Select<gf_t1, gf_t2, gf_t3>()
                 .InnerJoin((a, b, c) => a.id == b.id)
                 .Where((a, b, c) => c.rowstate > 10)
                 .ToList();
+            g.sqlite.Update<gf_t1>().NoneParameter().Set(a => a.rowstate + 1).Where(a => a.rowstate >= 0).ExecuteAffrows();
 
             var dtot2 = g.sqlite.Select<gf_t1>().ToList(a => new gfDto
             {
@@ -301,35 +324,44 @@ namespace FreeSql.Tests
                 }
             });
 
-            List<(Guid, DateTime)> contains2linqarr = new List<(Guid, DateTime)>();
-            Assert.Equal("SELECT 1 as1 FROM \"TestIgnoreDefaultValue\" a WHERE (1=0)", g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains2linqarr.Contains(a.Id, a.ct1)).ToSql(a => 1).Replace("\r\n", ""));
-            g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains2linqarr.Contains(a.Id, a.ct1)).ToList();
+            var repo_dtot22 = g.sqlite.GetRepository<gf_t1>();
 
-            contains2linqarr.Add((Guid.NewGuid(), DateTime.Now));
-            contains2linqarr.Add((Guid.NewGuid(), DateTime.Now));
-            contains2linqarr.Add((Guid.NewGuid(), DateTime.Now));
-            g.sqlite.Select<TestIgnoreDefaultValue>()
-                .Where(a => contains2linqarr.Contains(a.Id, a.ct1)).ToList();
+            var dtot221 = repo_dtot22.Select.ToList(a => new gfDto
+            {
+                dto2 = new dfDto2
+                {
+                    rowstate = a.rowstate
+                }
+            });
+
+            repo_dtot22.DbContextOptions.EnableGlobalFilter = false;
+            var dtot222 = repo_dtot22.Select.ToList(a => new gfDto
+            {
+                dto2 = new dfDto2
+                {
+                    rowstate = a.rowstate
+                }
+            });
+
+            //List<(Guid, DateTime)> contains2linqarr = new List<(Guid, DateTime)>();
+            //Assert.Equal("SELECT 1 as1 FROM \"TestIgnoreDefaultValue\" a WHERE (1=0)", g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains2linqarr.Contains(a.Id, a.ct1)).ToSql(a => 1).Replace("\r\n", ""));
+            //g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains2linqarr.Contains(a.Id, a.ct1)).ToList();
+
+            //contains2linqarr.Add((Guid.NewGuid(), DateTime.Now));
+            //contains2linqarr.Add((Guid.NewGuid(), DateTime.Now));
+            //contains2linqarr.Add((Guid.NewGuid(), DateTime.Now));
+            //g.sqlite.Select<TestIgnoreDefaultValue>()
+            //    .Where(a => contains2linqarr.Contains(a.Id, a.ct1)).ToList();
 
 
+            //List<(Guid, DateTime, DateTime?)> contains3linqarr = new List<(Guid, DateTime, DateTime?)>();
+            //Assert.Equal("SELECT 1 as1 FROM \"TestIgnoreDefaultValue\" a WHERE (1=0)", g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains3linqarr.Contains(a.Id, a.ct1, a.ct2)).ToSql(a => 1).Replace("\r\n", ""));
+            //g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains3linqarr.Contains(a.Id, a.ct1, a.ct2)).ToList();
 
-
-
-
-
-
-
-
-
-
-            List<(Guid, DateTime, DateTime?)> contains3linqarr = new List<(Guid, DateTime, DateTime?)>();
-            Assert.Equal("SELECT 1 as1 FROM \"TestIgnoreDefaultValue\" a WHERE (1=0)", g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains3linqarr.Contains(a.Id, a.ct1, a.ct2)).ToSql(a => 1).Replace("\r\n", ""));
-            g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains3linqarr.Contains(a.Id, a.ct1, a.ct2)).ToList();
-
-            contains3linqarr.Add((Guid.NewGuid(), DateTime.Now, DateTime.Now));
-            contains3linqarr.Add((Guid.NewGuid(), DateTime.Now, DateTime.Now));
-            contains3linqarr.Add((Guid.NewGuid(), DateTime.Now, DateTime.Now));
-            g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains3linqarr.Contains(a.Id, a.ct1, a.ct2)).ToList();
+            //contains3linqarr.Add((Guid.NewGuid(), DateTime.Now, DateTime.Now));
+            //contains3linqarr.Add((Guid.NewGuid(), DateTime.Now, DateTime.Now));
+            //contains3linqarr.Add((Guid.NewGuid(), DateTime.Now, DateTime.Now));
+            //g.sqlite.Select<TestIgnoreDefaultValue>().Where(a => contains3linqarr.Contains(a.Id, a.ct1, a.ct2)).ToList();
 
             var start = DateTime.Now.Date;
             var end = DateTime.Now.AddDays(1).Date.AddMilliseconds(-1);
@@ -459,7 +491,7 @@ namespace FreeSql.Tests
                     a.SubjectId
                 }).NoneParameter().ToSql();
 
-            g.mysql.Aop.ParseExpression = (s, e) =>
+            g.mysql.Aop.ParseExpression += (s, e) =>
             {
                 if (e.Expression.NodeType == ExpressionType.Call)
                 {
@@ -518,9 +550,14 @@ namespace FreeSql.Tests
 
 
             var comments2 = g.mysql.Select<Comment>()
-    .Include(r => r.UserInfo)
-    .From<UserLike>((z, b) => z.LeftJoin(u => u.Id == b.SubjectId))
-    .ToList((a, b) => new { comment = a, b.SubjectId, user = a.UserInfo });
+                .Include(r => r.UserInfo)
+                .From<UserLike>((z, b) => z.LeftJoin(u => u.Id == b.SubjectId))
+                .ToList((a, b) => new { comment = a, b.SubjectId, user = a.UserInfo,
+                    testb1 = a.UserInfo == null ? 1 : 0,
+                    testb2 = a.UserInfo != null ? 2 : 0,
+                    testb4 = b == null ? 3 : 0,
+                    testb5 = b != null ? 4 : 0,
+                });
 
             g.sqlite.Delete<SysModulePermission>().Where("1=1").ExecuteAffrows();
             g.sqlite.Delete<SysModuleButton>().Where("1=1").ExecuteAffrows();

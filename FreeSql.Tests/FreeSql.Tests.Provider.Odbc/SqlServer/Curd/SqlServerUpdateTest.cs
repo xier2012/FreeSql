@@ -27,9 +27,9 @@ namespace FreeSql.Tests.Odbc.SqlServer
         public void Dywhere()
         {
             Assert.Null(g.sqlserver.Update<Topic>().ToSql());
-            Assert.Equal("UPDATE [tb_topic] SET title='test' \r\nWHERE ([Id] = 1 OR [Id] = 2)", g.sqlserver.Update<Topic>(new[] { 1, 2 }).SetRaw("title='test'").ToSql());
+            Assert.Equal("UPDATE [tb_topic] SET title='test' \r\nWHERE ([Id] IN (1,2))", g.sqlserver.Update<Topic>(new[] { 1, 2 }).SetRaw("title='test'").ToSql());
             Assert.Equal("UPDATE [tb_topic] SET title='test1' \r\nWHERE ([Id] = 1)", g.sqlserver.Update<Topic>(new Topic { Id = 1, Title = "test" }).SetRaw("title='test1'").ToSql());
-            Assert.Equal("UPDATE [tb_topic] SET title='test1' \r\nWHERE ([Id] = 1 OR [Id] = 2)", g.sqlserver.Update<Topic>(new[] { new Topic { Id = 1, Title = "test" }, new Topic { Id = 2, Title = "test" } }).SetRaw("title='test1'").ToSql());
+            Assert.Equal("UPDATE [tb_topic] SET title='test1' \r\nWHERE ([Id] IN (1,2))", g.sqlserver.Update<Topic>(new[] { new Topic { Id = 1, Title = "test" }, new Topic { Id = 2, Title = "test" } }).SetRaw("title='test1'").ToSql());
             Assert.Equal("UPDATE [tb_topic] SET title='test1' \r\nWHERE ([Id] = 1)", g.sqlserver.Update<Topic>(new { id = 1 }).SetRaw("title='test1'").ToSql());
         }
 
@@ -51,6 +51,33 @@ namespace FreeSql.Tests.Odbc.SqlServer
 
             sql = update.SetSource(items).IgnoreColumns(a => a.TypeGuid).Set(a => a.CreateTime, new DateTime(2020, 1, 1)).ToSql().Replace("\r\n", "");
             Assert.Equal("UPDATE [tb_topic] SET [CreateTime] = '2020-01-01 00:00:00.000' WHERE ([Id] IN (1,2,3,4,5,6,7,8,9,10))", sql);
+
+            sql = g.sqlserver.Update<ts_source_mpk>().SetSource(new[] {
+                new ts_source_mpk { id1 = 1, id2 = 7, xx = "a1" },
+                new ts_source_mpk { id1 = 1, id2 = 8, xx = "b122" }
+            }).NoneParameter().ToSql().Replace("\r\n", "");
+        }
+        public class ts_source_mpk
+        {
+            [Column(IsPrimary = true)]
+            public int id1 { get; set; }
+            [Column(IsPrimary = true)]
+            public int id2 { get; set; }
+            public string xx { get; set; }
+        }
+        [Fact]
+        public void SetSourceIgnore()
+        {
+            Assert.Equal("UPDATE [tssi01] SET [tint] = 10 WHERE ([id] = '00000000-0000-0000-0000-000000000000')",
+                g.sqlserver.Update<tssi01>().NoneParameter()
+                    .SetSourceIgnore(new tssi01 { id = Guid.Empty, tint = 10 }, col => col == null).ToSql().Replace("\r\n", ""));
+        }
+        public class tssi01
+        {
+            [Column(CanUpdate = false)]
+            public Guid id { get; set; }
+            public int tint { get; set; }
+            public string title { get; set; }
         }
         [Fact]
         public void IgnoreColumns()
@@ -95,12 +122,24 @@ namespace FreeSql.Tests.Odbc.SqlServer
 
             sql = update.Set(a => a.Id == 10).Where(a => a.Id == 1).ToSql().Replace("\r\n", "");
             Assert.Equal("UPDATE [tb_topic] SET [Id] = 10 WHERE ([Id] = 1)", sql);
+
+            sql = update.Set(a => a.Clicks == null).Where(a => a.Id == 1).ToSql().Replace("\r\n", "");
+            Assert.Equal("UPDATE [tb_topic] SET [Clicks] = NULL WHERE ([Id] = 1)", sql);
         }
         [Fact]
         public void SetRaw()
         {
             var sql = update.Where(a => a.Id == 1).SetRaw("clicks = clicks + ?", new { incrClick = 1 }).ToSql().Replace("\r\n", "");
             Assert.Equal("UPDATE [tb_topic] SET clicks = clicks + ? WHERE ([Id] = 1)", sql);
+        }
+        [Fact]
+        public void SetDto()
+        {
+            var sql = update.SetDto(new { clicks = 1, title = "xxx" }).Where(a => a.Id == 1).ToSql().Replace("\r\n", "");
+            Assert.Equal("UPDATE [tb_topic] SET [Clicks] = 1, [Title] = N'xxx' WHERE ([Id] = 1)", sql);
+
+            sql = update.SetDto(new Dictionary<string, object> { ["clicks"] = 1, ["title"] = "xxx" }).Where(a => a.Id == 1).ToSql().Replace("\r\n", "");
+            Assert.Equal("UPDATE [tb_topic] SET [Clicks] = 1, [Title] = N'xxx' WHERE ([Id] = 1)", sql);
         }
         [Fact]
         public void Where()
@@ -141,19 +180,19 @@ namespace FreeSql.Tests.Odbc.SqlServer
             g.sqlserver.Insert<Topic>().AppendData(new Topic()).ExecuteAffrows();
 
             var items = g.sqlserver.Select<Topic>().Limit(2).ToList();
-            g.sqlserver.Update<Topic>(items).SetRaw("title='test'").ExecuteUpdated();
+            g.sqlserver.Update<Topic>(items).SetRaw("Title='test'").ExecuteUpdated();
 
             items = g.sqlserver.Select<Topic>().Limit(2).ToList();
-            var result = g.sqlserver.Update<Topic>(items).SetRaw("title='test'").ExecuteUpdatedAsync().Result;
+            var result = g.sqlserver.Update<Topic>(items).SetRaw("Title='test'").ExecuteUpdatedAsync().Result;
         }
 
         [Fact]
         public void AsTable()
         {
             Assert.Null(g.sqlserver.Update<Topic>().ToSql());
-            Assert.Equal("UPDATE [tb_topicAsTable] SET title='test' \r\nWHERE ([Id] = 1 OR [Id] = 2)", g.sqlserver.Update<Topic>(new[] { 1, 2 }).SetRaw("title='test'").AsTable(a => "tb_topicAsTable").ToSql());
+            Assert.Equal("UPDATE [tb_topicAsTable] SET title='test' \r\nWHERE ([Id] IN (1,2))", g.sqlserver.Update<Topic>(new[] { 1, 2 }).SetRaw("title='test'").AsTable(a => "tb_topicAsTable").ToSql());
             Assert.Equal("UPDATE [tb_topicAsTable] SET title='test1' \r\nWHERE ([Id] = 1)", g.sqlserver.Update<Topic>(new Topic { Id = 1, Title = "test" }).SetRaw("title='test1'").AsTable(a => "tb_topicAsTable").ToSql());
-            Assert.Equal("UPDATE [tb_topicAsTable] SET title='test1' \r\nWHERE ([Id] = 1 OR [Id] = 2)", g.sqlserver.Update<Topic>(new[] { new Topic { Id = 1, Title = "test" }, new Topic { Id = 2, Title = "test" } }).SetRaw("title='test1'").AsTable(a => "tb_topicAsTable").ToSql());
+            Assert.Equal("UPDATE [tb_topicAsTable] SET title='test1' \r\nWHERE ([Id] IN (1,2))", g.sqlserver.Update<Topic>(new[] { new Topic { Id = 1, Title = "test" }, new Topic { Id = 2, Title = "test" } }).SetRaw("title='test1'").AsTable(a => "tb_topicAsTable").ToSql());
             Assert.Equal("UPDATE [tb_topicAsTable] SET title='test1' \r\nWHERE ([Id] = 1)", g.sqlserver.Update<Topic>(new { id = 1 }).SetRaw("title='test1'").AsTable(a => "tb_topicAsTable").ToSql());
         }
     }

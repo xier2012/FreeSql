@@ -10,6 +10,14 @@ namespace FreeSql.Extensions.LazyLoading
     {
 
 #if ns20
+        //public static Assembly CompileCode(string cscode)
+        //{
+        //    Natasha.AssemblyComplier complier = new Natasha.AssemblyComplier();
+        //    //complier.Domain = DomainManagment.Random;
+        //    complier.Add(cscode);
+        //    return complier.GetAssembly();
+        //}
+
         internal static Lazy<CSScriptLib.RoslynEvaluator> _compiler = new Lazy<CSScriptLib.RoslynEvaluator>(() =>
         {
             var compiler = new CSScriptLib.RoslynEvaluator();
@@ -41,7 +49,7 @@ namespace FreeSql.Extensions.LazyLoading
                     if (!dll.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
                         !dll.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
 
-                    Console.WriteLine(dll);
+                    //Console.WriteLine(dll);
                     var dllName = string.Empty;
                     var idx = dll.LastIndexOf('/');
                     if (idx != -1) dllName = dll.Substring(idx + 1);

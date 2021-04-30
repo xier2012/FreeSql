@@ -79,7 +79,7 @@ namespace FreeSql.DataAnnotations
 
         internal int? _StringLength;
         /// <summary>
-        /// 设置长度，针对 string 类型避免 DbType 的繁琐设置<para></para>
+        /// 设置长度，针对 string/byte[] 类型避免 DbType 的繁琐设置<para></para>
         /// 提示：也可以使用 [MaxLength(100)]<para></para>
         /// ---<para></para>
         /// StringLength = 100 时，对应 DbType：<para></para>
@@ -89,12 +89,13 @@ namespace FreeSql.DataAnnotations
         /// Oracle -> nvarchar2(100)<para></para>
         /// Sqlite -> nvarchar(100)<para></para>
         /// ---<para></para>
-        /// StringLength = -1 时，对应 DbType：<para></para>
-        /// MySql -> text<para></para>
+        /// StringLength &lt; 0 时，对应 DbType：<para></para>
+        /// MySql -> text (StringLength = -2 时，对应 longtext)<para></para>
         /// SqlServer -> nvarchar(max)<para></para>
         /// PostgreSQL -> text<para></para>
-        /// Oracle -> nvarchar2(4000)<para></para>
+        /// Oracle -> nclob<para></para>
         /// Sqlite -> text<para></para>
+        /// v1.6.0+ byte[] 支持设置 StringLength
         /// </summary>
         public int StringLength { get => _StringLength ?? 0; set => _StringLength = value; }
 
@@ -103,5 +104,30 @@ namespace FreeSql.DataAnnotations
         /// 注意：如果是 getdate() 这种请可考虑使用 ServerTime，因为它对数据库间作了适配
         /// </summary>
         public string InsertValueSql { get; set; }
+
+        internal int? _Precision;
+        /// <summary>
+        /// decimal/numeric 类型的长度
+        /// </summary>
+        public int Precision { get => _Precision ?? 0; set => _Precision = value; }
+        internal int? _Scale;
+        /// <summary>
+        /// decimal/numeric 类型的小数位长度
+        /// </summary>
+        public int Scale { get => _Scale ?? 0; set => _Scale = value; }
+
+        /// <summary>
+        /// 重写功能<para></para>
+        /// 比如：[Column(RewriteSql = &quot;geography::STGeomFromText({0},4236)&quot;)]<para></para>
+        /// 插入：INSERT INTO [table]([geo]) VALUES(geography::STGeomFromText('...',4236))<para></para>
+        /// 提示：更新也生效
+        /// </summary>
+        public string RewriteSql { get; set; }
+        /// <summary>
+        /// 重读功能<para></para>
+        /// 比如：[Column(RereadSql = &quot;{0}.STAsText()&quot;)]<para></para>
+        /// 查询：SELECT a.[id], a.[geo].STAsText() FROM [table] a
+        /// </summary>
+        public string RereadSql { get; set; }
     }
 }

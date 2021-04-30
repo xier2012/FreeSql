@@ -1,9 +1,14 @@
 ﻿using FreeSql.Internal;
 using FreeSql.Internal.Model;
+#if MySqlConnector
+using MySqlConnector;
+#else
 using MySql.Data.MySqlClient;
+#endif
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Globalization;
 
 namespace FreeSql.MySql
 {
@@ -29,7 +34,7 @@ namespace FreeSql.MySql
                         break;
                     default:
                         dbtype = dbtype2;
-                        if (col.DbSize != 0) ret.Size = col.DbSize;
+                        //if (col.DbSize != 0) ret.Size = col.DbSize;
                         if (col.DbPrecision != 0) ret.Precision = col.DbPrecision;
                         if (col.DbScale != 0) ret.Scale = col.DbScale;
                         break;
@@ -86,7 +91,7 @@ namespace FreeSql.MySql
             return $"{nametrim.Trim('`').Replace("`.`", ".").Replace(".`", ".")}";
         }
         public override string[] SplitTableName(string name) => GetSplitTableNames(name, '`', '`', 2);
-        public override string QuoteParamterName(string name) => $"?{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
+        public override string QuoteParamterName(string name) => $"?{name}";
         public override string IsNull(string sql, object value) => $"ifnull({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types) => $"concat({string.Join(", ", objs)})";
         public override string Mod(string left, string right, Type leftType, Type rightType) => $"{left} % {right}";
@@ -94,7 +99,7 @@ namespace FreeSql.MySql
         public override string Now => "now()";
         public override string NowUtc => "utc_timestamp()";
 
-        public override string QuoteWriteParamter(Type type, string paramterName)
+        public override string QuoteWriteParamterAdapter(Type type, string paramterName)
         {
             switch (type.FullName)
             {
@@ -107,7 +112,7 @@ namespace FreeSql.MySql
             }
             return paramterName;
         }
-        public override string QuoteReadColumn(Type type, Type mapType, string columnName)
+        protected override string QuoteReadColumnAdapter(Type type, Type mapType, string columnName)
         {
             switch (mapType.FullName)
             {
@@ -121,9 +126,10 @@ namespace FreeSql.MySql
             return columnName;
         }
 
-        public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
+        public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, string specialParamFlag, ColumnInfo col, Type type, object value)
         {
             if (value == null) return "NULL";
+            if (type.IsNumberType()) return string.Format(CultureInfo.InvariantCulture, "{0}", value);
             if (type == typeof(byte[])) return $"0x{CommonUtils.BytesSqlRaw(value as byte[])}";
             if (type == typeof(TimeSpan) || type == typeof(TimeSpan?))
             {
